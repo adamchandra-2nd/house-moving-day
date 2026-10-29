@@ -741,7 +741,7 @@
 
 /* Pengisi acara */
 .pengisi-fill { grid-template-columns: minmax(0, 1fr) 320px; }
-.pengisi-actions { display: inline-flex; gap: var(--spacing-extra-small); }
+.pengisi-actions { display: inline-flex; align-items: center; gap: var(--spacing-extra-small); }
 .naskah-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .naskah-item { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-small); padding: var(--padding-medium) 0; border-bottom: 1px solid var(--border); }
 .naskah-item:first-child { padding-top: 0; }
@@ -783,3 +783,30 @@
 .script-edit__label.is-active { border-color: var(--orange-splash); background: rgba(249, 91, 0, 0.08); color: var(--orange-splash); }
 .script-edit__del { width: 32px; height: 32px; margin-left: auto; }
 .script-edit textarea { min-height: 64px; }
+
+/* "⋮" row menu (RowMenu in ui.tsx): one main action per row, the rest behind this. */
+.row-menu__btn { width: 40px; height: 40px; }
+.row-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: var(--padding-small);
+  border-radius: var(--radius-large);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 32px rgba(16, 16, 16, 0.14);
+}
+.row-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-small);
+  padding: var(--padding-medium) var(--padding-mid-medium);
+  border-radius: var(--radius-medium);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.row-menu__item:hover { background: var(--background-primary); }
+.row-menu__item.is-danger { color: var(--error); }

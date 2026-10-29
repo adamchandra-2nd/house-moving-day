@@ -10,7 +10,7 @@ import { SCRIPTS, type Person, type ScriptPart } from "../stage/data";
 import { stageLink, waLink, type PersonAccess } from "./api";
 import type { AdminEvent } from "./data";
 import { normalizePhone } from "./invite";
-import { DataTable, Empty, Panel } from "./ui";
+import { DataTable, Empty, Panel, RowMenu } from "./ui";
 
 export type Access = PersonAccess;
 const ACCESS: Record<Access, { label: string; type: "done" | "neutral" | "claimed" | "danger"; icon?: "Check" | "Send" | "Close" }> = {
@@ -113,10 +113,12 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
         >
           <DataTable
             columns={[
-              { label: "Nama & sesi", width: "minmax(0, 1fr)" },
-              { label: "Peran", width: "128px" },
-              { label: "Akses", width: "164px" },
-              { label: "Aksi", width: live ? "392px" : "228px", align: "end" },
+              { label: "Nama & sesi", width: "minmax(200px, 1fr)" },
+              { label: "Peran", width: "136px" },
+              { label: "Akses", width: "168px" },
+              // One main action and a "⋮" menu: four buttons per row crushed
+              // the name down to an initial and cut the access status off.
+              { label: "Aksi", width: "220px", align: "end" },
             ]}
             empty={<Empty icon="Sparkle" tone="sky" title="Belum ada MC atau pembicara" body="Tambahkan dulu, lalu kirim link pribadinya lewat WhatsApp." />}
             rows={people.map((p) => {
@@ -140,21 +142,6 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
                     {ACCESS[a].label}
                   </Badge>,
                   <span className="pengisi-actions">
-                    {live && (
-                      <Button size="small" style="tertiary" icon="Pencil" onClick={() => setPerson(p)}>
-                        Ubah
-                      </Button>
-                    )}
-                    {live && a !== "dicabut" && (
-                      <Button size="small" style="tertiary" icon="Copy" onClick={() => copy(p)}>
-                        Salin
-                      </Button>
-                    )}
-                    {a !== "dicabut" && a !== "belum" && (
-                      <Button size="small" style="tertiary" onClick={() => setRevoking(p)}>
-                        Cabut
-                      </Button>
-                    )}
                     {/* A revoked link is turned back on first: sending it again would only reach a closed door. */}
                     {a === "dicabut" && live && onRestore ? (
                       <Button size="small" style="tertiary" icon="Lock" onClick={() => onRestore(p.id)}>
@@ -165,6 +152,14 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
                         {a === "belum" ? "Kirim link" : "Kirim ulang"}
                       </Button>
                     )}
+                    <RowMenu
+                      label={`Aksi lain untuk ${p.name}`}
+                      items={[
+                        ...(live ? [{ label: "Ubah", icon: "Pencil" as const, onSelect: () => setPerson(p) }] : []),
+                        ...(live && a !== "dicabut" ? [{ label: "Salin link", icon: "Copy" as const, onSelect: () => copy(p) }] : []),
+                        ...(a !== "dicabut" && a !== "belum" ? [{ label: "Cabut akses", icon: "Close" as const, danger: true, onSelect: () => setRevoking(p) }] : []),
+                      ]}
+                    />
                   </span>,
                 ],
               };

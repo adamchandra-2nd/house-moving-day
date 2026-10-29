@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Application } from "@splinetool/runtime";
 import { ALL_OUTFIT_NODES, outfitNodes, type Outfit } from "../data/outfits";
 import { CharacterStageContext, type CharacterStageValue, type StageStatus } from "./characterStageContext";
-import { capture as captureCanvas, lowestOpaqueRow } from "./capture";
+import { capture as captureCanvas, characterRows } from "./capture";
 import { SCENE } from "./scene";
 import "./CharacterStage.css";
 
@@ -173,6 +173,9 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
     return () => {
       observer.disconnect();
       stopGrounding.current();
+      // The 2D sprite that takes over this slot is cropped tight: its head is
+      // at the top of the box, so the 3D head position must not linger.
+      activeSlot.closest<HTMLElement>(".character")?.style.removeProperty("--head-gap");
     };
   }, [activeSlot, status]);
 
@@ -277,14 +280,18 @@ function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
   let lowest = -1;
   let cancelled = false;
   const reading = () =>
-    Promise.race([lowestOpaqueRow(canvas), new Promise<null>((done) => window.setTimeout(() => done(null), 1500))]);
+    Promise.race([characterRows(canvas), new Promise<null>((done) => window.setTimeout(() => done(null), 1500))]);
   const attempt = () => {
-    void reading().then((row) => {
+    void reading().then((rows) => {
       if (cancelled) return;
-      if (row !== null && row > lowest) {
-        lowest = row;
-        const gap = ((canvas.height - 1 - row) / canvas.height) * cssHeight;
-        canvas.style.setProperty("--feet-gap", `${Math.max(0, Math.round(gap))}px`);
+      if (rows !== null && rows.bottom > lowest) {
+        lowest = rows.bottom;
+        const gap = Math.max(0, Math.round(((canvas.height - 1 - rows.bottom) / canvas.height) * cssHeight));
+        canvas.style.setProperty("--feet-gap", `${gap}px`);
+        // Where the head is inside the <Character> box once moved down, for
+        // the speech bubble: it sits on the horns, not on the canvas edge.
+        const head = Math.round((rows.top / canvas.height) * cssHeight) + gap;
+        canvas.closest<HTMLElement>(".character")?.style.setProperty("--head-gap", `${head}px`);
       }
       // Up to a minute for the character to appear, then ~6s more to catch
       // the parts that stream in after the first frame.

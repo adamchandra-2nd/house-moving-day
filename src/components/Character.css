@@ -7,11 +7,19 @@
   width: 240px;
   height: 340px;
 }
-/* Speech bubble above the head */
+/* Speech bubble above the head. Portalled to <body> (see Character.tsx):
+   the anchor is a zero-size point on top of the head, the bubble sits on it. */
+.character__bubble-anchor {
+  position: fixed;
+  width: 0;
+  height: 0;
+  z-index: 40;
+  pointer-events: none;
+}
 .character__bubble {
   position: absolute;
-  bottom: calc(100% + var(--spacing-extra-small));
-  left: 50%;
+  bottom: var(--spacing-extra-small);
+  left: 0;
   width: max-content;
   max-width: 220px;
   padding: var(--padding-medium) var(--padding-mid-medium);
