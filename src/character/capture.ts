@@ -40,20 +40,29 @@ export async function lowestOpaqueRow(canvas: HTMLCanvasElement): Promise<number
  * wherever the sprite is used. Cropping to the visible bounding box makes it a
  * drop-in replacement.
  *
- * Returns null — and the caller keeps the 2D character — when the buffer is
- * empty or the canvas is tainted by a cross-origin texture.
+ * The frame is taken synchronously, through toDataURL(), at the moment of the
+ * call -- the caller navigates straight after, which moves the canvas -- and
+ * only decoded and cropped afterwards. Not drawImage(canvas): see
+ * lowestOpaqueRow, it read back an empty frame every time, so every guest got
+ * the bundled art instead of the character they had just made.
+ *
+ * Resolves to null — and the caller keeps the 2D character — when the buffer
+ * is empty or the canvas is tainted by a cross-origin texture.
  */
-export function capture(canvas: HTMLCanvasElement): string | null {
+export async function capture(canvas: HTMLCanvasElement): Promise<string | null> {
   try {
     const { width: w, height: h } = canvas;
     if (!w || !h) return null;
+    const frame = new Image();
+    frame.src = canvas.toDataURL();
+    await frame.decode();
 
     const full = document.createElement("canvas");
     full.width = w;
     full.height = h;
     const ctx = full.getContext("2d");
     if (!ctx) return null;
-    ctx.drawImage(canvas, 0, 0);
+    ctx.drawImage(frame, 0, 0);
 
     const { data } = ctx.getImageData(0, 0, w, h);
     let minX = w;

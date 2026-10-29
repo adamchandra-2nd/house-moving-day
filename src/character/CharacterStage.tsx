@@ -198,7 +198,7 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
   const previewOutfit = useCallback((next: Outfit | null) => setPreview(next), []);
   const capture = useCallback(() => {
     const canvas = canvasRef.current;
-    return status === "ready" && canvas ? captureCanvas(canvas) : null;
+    return status === "ready" && canvas ? captureCanvas(canvas) : Promise.resolve(null);
   }, [status]);
 
   const value = useMemo<CharacterStageValue>(
@@ -287,8 +287,7 @@ const LOOK = [
 const LOOK_HOLD_MS = 2200;
 
 /**
- * The character looks at wherever the guest taps -- the background, a card,
- * the character itself.
+ * The character looks at wherever the guest taps on the room around it.
  *
  * Tapping is how a guest plays with it, and a character that ignores the
  * finger reads as a picture, not a pet. Head and eyes ease toward the tap,
@@ -325,6 +324,10 @@ function useLookAt(app: Application | null, slot: HTMLElement | null) {
     };
 
     const onTap = (e: PointerEvent) => {
+      // The room, not the controls: a character that looks down at the
+      // bottom nav on every tab change -- or at "Selesai" in the instant its
+      // portrait is taken on /karakter -- is following the wrong thing.
+      if (e.target instanceof Element && e.target.closest("button, a, input, textarea, select, [role=button]")) return;
       const r = slot.getBoundingClientRect();
       if (!r.width) return;
       const headX = r.left + r.width / 2;
