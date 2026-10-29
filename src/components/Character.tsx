@@ -53,17 +53,22 @@ export function Character({ say }: CharacterProps) {
    * the claim effect does not re-run while `status` stays "ready", so the 3D
    * character would never come back. The class alone is not enough either --
    * it is already there from the first tap, and a class that does not change
-   * never replays its animation. So the animation is rewound by hand.
+   * never replays its animation.
    *
-   * Under `prefers-reduced-motion` the slot has no animation to find, so this
-   * does nothing, which is the point.
+   * Rewinding it with getAnimations() did not work past the first tap: once
+   * a CSS animation finishes, the browser drops it, so from the second tap on
+   * there was nothing left to rewind. Taking the class off, forcing a style
+   * recalc, and putting it back starts a fresh animation every time.
+   *
+   * Under `prefers-reduced-motion` the class carries no animation, so this
+   * does nothing visible, which is the point.
    */
   useEffect(() => {
-    if (!bounce) return;
-    for (const anim of slotRef.current?.getAnimations() ?? []) {
-      anim.currentTime = 0;
-      anim.play();
-    }
+    const slot = slotRef.current;
+    if (!bounce || !slot) return;
+    slot.classList.remove("is-bouncing");
+    void slot.offsetWidth;
+    slot.classList.add("is-bouncing");
   }, [bounce]);
 
   const is3D = status === "ready" && activeSlot !== null && activeSlot === slotRef.current;
