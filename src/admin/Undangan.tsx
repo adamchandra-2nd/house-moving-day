@@ -58,7 +58,13 @@ type Props = {
 /** What the committee sees per guest: answered RSVP wins, otherwise the WhatsApp delivery status. */
 const inviteState = (g: AdminGuest): Exclude<Tab, "semua"> | "mengirim" =>
   g.rsvp !== "belum" ? "rsvp" : g.invite === "mengirim" ? "mengirim" : g.invite;
-const sendable = (g: AdminGuest) => g.rsvp === "belum" && g.invite !== "mengirim";
+/**
+ * Anyone not mid-send can be picked. Guests who had already answered used to
+ * be left out, which took away every checkbox once everybody had RSVP'd -- but
+ * the link is also their way in on the day, and a guest who lost it needs it
+ * sent again.
+ */
+const sendable = (g: AdminGuest) => g.invite !== "mengirim";
 const firstName = (n: string) => n.split(" ")[0];
 const newRow = (id: string, r: { name: string; phone: string }): AdminGuest => ({
   id,
@@ -365,7 +371,7 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
               { label: "Tamu", width: "minmax(0, 1.3fr)" },
               { label: "Status", width: "minmax(0, 1.2fr)" },
               { label: "Dikirim", width: "90px" },
-              { label: "Aksi", width: "150px", align: "end" },
+              { label: "Aksi", width: "176px", align: "end" },
             ]}
             empty={<Empty icon="Mail" tone="green" title={tab === "gagal" ? "Tidak ada yang gagal" : "Belum ada tamu di sini"} body={tab === "gagal" ? "Semua undangan berhasil terkirim." : "Impor CSV untuk menambah tamu."} />}
             rows={rows.map((g) => ({
@@ -386,13 +392,11 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
                   {g.invite === "gagal" && g.rsvp === "belum" && <span className="t-p-h5 invite-status__err">{g.inviteError}</span>}
                 </span>,
                 <span className="t-p-h5 admin-muted">{g.invitedAt !== undefined && g.invite !== "belum" ? formatTime(g.invitedAt) : "–"}</span>,
-                g.rsvp !== "belum" ? (
-                  <span className="t-p-h5 admin-muted">Tidak perlu</span>
-                ) : g.invite === "mengirim" ? (
+                g.invite === "mengirim" ? (
                   <span className="t-p-h5 admin-muted">Mengirim…</span>
                 ) : (
                   <Button size="small" style="tertiary" icon="Send" onClick={() => setSingle(g)}>
-                    {g.invite === "belum" ? "Kirim" : "Kirim ulang"}
+                    {g.invite === "belum" ? "Kirim" : g.rsvp === "belum" ? "Kirim ulang" : "Kirim ulang link"}
                   </Button>
                 ),
               ],
@@ -453,7 +457,7 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
           icon="Send"
           iconTone="green"
           title={`Kirim undangan ke ${picked.length} tamu?`}
-          description="Tiap tamu dapat pesan dengan nama dan link RSVP-nya sendiri. Pengiriman tidak bisa dibatalkan."
+          description="Tiap tamu dapat pesan dengan nama dan link pribadinya sendiri (untuk RSVP dan check-in). Pengiriman tidak bisa dibatalkan."
           form
           onClose={() => setBulkConfirm(false)}
           actions={
