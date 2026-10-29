@@ -255,26 +255,29 @@ function applySceneFixes(app: Application) {
  * slot are placed per screen. The gap is read off a rendered frame rather than
  * hard-coded, so a re-exported scene with another framing still lands.
  *
- * Settles on two matching readings in a row: right after setSize() the buffer
- * can be empty, and the first frames are drawn before the scene's camera has
- * framed the character -- one early reading put the feet 100px too low.
+ * Keeps reading for a few seconds and goes by the lowest feet it has seen.
+ * Right after setSize() the buffer can be empty, and a scene that streams in
+ * draws the character in pieces: a frame with the legs still missing put the
+ * feet 80px too high, and two of those in a row agreed with each other. An
+ * unfinished frame can only ever show the feet higher than they are, never
+ * lower, so the lowest reading is the real one.
  * Returns a cancel function.
  */
 function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
   let timer = 0;
   let tries = 0;
-  let last: number | null = null;
+  let lowest = -1;
   let cancelled = false;
   const attempt = () => {
     void lowestOpaqueRow(canvas).then((row) => {
       if (cancelled) return;
-      if (row !== null && last !== null && Math.abs(row - last) <= 2) {
+      if (row !== null && row > lowest) {
+        lowest = row;
         const gap = ((canvas.height - 1 - row) / canvas.height) * cssHeight;
         canvas.style.setProperty("--feet-gap", `${Math.max(0, Math.round(gap))}px`);
-        return;
       }
-      last = row;
-      if (++tries < 20) timer = window.setTimeout(attempt, 200);
+      // ~9s: a 1.6 MB scene on a phone can take that long to finish drawing.
+      if (++tries < 30) timer = window.setTimeout(attempt, 300);
     });
   };
   timer = window.setTimeout(attempt, 200);
