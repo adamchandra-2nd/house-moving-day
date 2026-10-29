@@ -102,8 +102,8 @@ export function useStagePeople({ demo, enabled = true }: Mode): Person[] {
   return list;
 }
 
-/** Questions asked so far. New ones also arrive over the stream. */
-export const useStageQuestions = () => useServerData<ApiQuestion[]>("/api/stage/questions", []);
+/** Questions asked so far, re-read every 10s: the stream is not there on every host. */
+export const useStageQuestions = () => useServerData<ApiQuestion[]>("/api/stage/questions", [], 10_000);
 
 /**
  * The room, re-read every half minute.

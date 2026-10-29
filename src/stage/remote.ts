@@ -220,6 +220,9 @@ export async function push(next: StageState, token: string | null, reapply?: (la
  * sends `retry:` and a heartbeat, so a phone that loses wifi in a basement
  * picks the stream back up by itself.
  */
+/** How often the stage state is re-read when the stream is not delivering. */
+const POLL_MS = 3000;
+
 export function subscribe(token: string | null, onState: (s: StageState, r: number) => void): () => void {
   const t = token ?? loadStageToken();
   if (!t) return () => {};
@@ -243,7 +246,29 @@ export function subscribe(token: string | null, onState: (s: StageState, r: numb
   es.onerror = () => {
     if (es.readyState === EventSource.CLOSED && !token) void pull(null).catch(() => undefined);
   };
-  return () => es.close();
+
+  // The stream is the fast path; this one always works. Where the API runs
+  // as a serverless function the stream answers 503 and polling is the only
+  // path; where it can stream, this catches whatever a dropped connection
+  // missed. Paused while the tab is hidden, which on a phone is most of the
+  // time it is not in someone's hand.
+  let stopped = false;
+  const poll = window.setInterval(() => {
+    if (document.hidden) return;
+    void request<Envelope>("/api/stage/state", { token: t })
+      .then((env) => {
+        if (stopped || !env.state || env.rev <= rev) return;
+        rev = env.rev;
+        onState(withDefaults(env.state)!, rev);
+      })
+      .catch((e: unknown) => handleStageRefusal(e, token));
+  }, POLL_MS);
+
+  return () => {
+    stopped = true;
+    clearInterval(poll);
+    es.close();
+  };
 }
 
 /** The local copy, kept so a reload paints before the first response lands. */
