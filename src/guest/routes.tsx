@@ -62,6 +62,9 @@ export function GuestShell() {
   );
 }
 
+/** How far before a guest arrived an announcement still shows to them, in minutes. */
+const ANNOUNCEMENT_GRACE_MIN = 30;
+
 /**
  * One Spline instance for every guest screen, inside the provider so it can
  * read the outfit. Admin sits outside this and never loads Spline.
@@ -347,13 +350,15 @@ export function AppRoute() {
 
   /**
    * The newest committee announcement this guest has not seen, sent since
-   * they arrived (earlier ones were for the people already in the room).
+   * they arrived or in the half hour before (anything older was for the
+   * people already in the room; a guest walking in just after "foto bersama
+   * 5 menit lagi" still needs it).
    * On Ruangan it shows in MainArea's notification slot; on the other tabs
    * as the page toast.
    */
   // Seen is keyed by id *and* time: the committee's "kirim ulang" keeps the id
   // and moves `at` to now, and that has to show again.
-  const unseen = [...(announcements ?? []), ...rundownNotices].filter((a) => a.at >= state.hadirAt && !state.seenAnnouncements.includes(seenKey(a)));
+  const unseen = [...(announcements ?? []), ...rundownNotices].filter((a) => a.at >= state.hadirAt - ANNOUNCEMENT_GRACE_MIN && !state.seenAnnouncements.includes(seenKey(a)));
   const announcement = unseen[unseen.length - 1];
   // Marks everything waiting as seen, not just the one shown: a guest back
   // from a dead zone gets the latest announcement, not a queue of old ones.

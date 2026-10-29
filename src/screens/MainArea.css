@@ -49,9 +49,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Feet rest on the room floor, just above the room indicator + bottom nav. */
+  /* Feet rest on the room floor, just above the room indicator + bottom nav,
+     with room for the floor shadow under them to show. */
   justify-content: flex-end;
-  padding-bottom: calc(max(var(--padding-extra-large), env(safe-area-inset-bottom)) + 136px);
+  padding-bottom: calc(max(var(--padding-extra-large), env(safe-area-inset-bottom)) + 156px);
   pointer-events: none;
   z-index: 1;
 }

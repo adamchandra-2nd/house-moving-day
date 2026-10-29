@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Application } from "@splinetool/runtime";
 import { ALL_OUTFIT_NODES, outfitNodes, type Outfit } from "../data/outfits";
 import { CharacterStageContext, type CharacterStageValue, type StageStatus } from "./characterStageContext";
-import { capture as captureCanvas } from "./capture";
+import { capture as captureCanvas, lowestOpaqueRow } from "./capture";
 import { SCENE } from "./scene";
 import "./CharacterStage.css";
 
@@ -79,6 +79,14 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
         await app.load(SCENE.url);
         appRef.current = app;
         applySceneFixes(app);
+        // Spline leaves hidden objects out of a code export, so the clothes
+        // are exported visible -- all of them at once. Undressed here, before
+        // the canvas is ever on screen; the dressing effect below puts on
+        // whatever this guest chose.
+        for (const node of ALL_OUTFIT_NODES) {
+          const obj = app.findObjectByName(node);
+          if (obj) obj.visible = false;
+        }
         setWardrobe(reportWardrobe(app));
         setProgress(100);
         setStatus("ready");
@@ -151,15 +159,24 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
      * Sizes are CSS pixels: Spline multiplies by the scene's own pixel ratio
      * setting (Export → Pixel Ratio), so doing it here too would double it.
      */
+    const stopGrounding = { current: () => {} };
     const resize = () => {
       const { width, height } = activeSlot.getBoundingClientRect();
-      if (width && height) app?.setSize(width, height);
+      if (!width || !height) return;
+      app?.setSize(width, height);
+      stopGrounding.current();
+      stopGrounding.current = ground(canvas, height);
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(activeSlot);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      stopGrounding.current();
+    };
   }, [activeSlot, status]);
+
+  useLookAt(appRef.current, status === "ready" ? activeSlot : null);
 
   // Nothing on screen needs it, or the tab is in the background: stop drawing.
   useEffect(() => {
@@ -189,7 +206,7 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
   const previewOutfit = useCallback((next: Outfit | null) => setPreview(next), []);
   const capture = useCallback(() => {
     const canvas = canvasRef.current;
-    return status === "ready" && canvas ? captureCanvas(canvas) : null;
+    return status === "ready" && canvas ? captureCanvas(canvas) : Promise.resolve(null);
   }, [status]);
 
   const value = useMemo<CharacterStageValue>(
@@ -227,6 +244,128 @@ function applySceneFixes(app: Application) {
   if (unmatched.size) {
     console.warn(`[CharacterStage] scene.show/hide matched nothing for: ${[...unmatched].join(", ")}`);
   }
+}
+
+/**
+ * Moves the canvas down until the character's feet meet the bottom of its slot.
+ *
+ * The scene's camera frames the character with empty space under the feet,
+ * so with the canvas filling the slot the character floated above the floor
+ * shadow -- by a different amount in every room, since only the shadow and the
+ * slot are placed per screen. The gap is read off a rendered frame rather than
+ * hard-coded, so a re-exported scene with another framing still lands.
+ *
+ * Keeps reading for a few seconds and goes by the lowest feet it has seen.
+ * Right after setSize() the buffer can be empty, and a scene that streams in
+ * draws the character in pieces: a frame with the legs still missing put the
+ * feet 80px too high, and two of those in a row agreed with each other. An
+ * unfinished frame can only ever show the feet higher than they are, never
+ * lower, so the lowest reading is the real one.
+ * Returns a cancel function.
+ */
+function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
+  let timer = 0;
+  let tries = 0;
+  let lowest = -1;
+  let cancelled = false;
+  const attempt = () => {
+    void lowestOpaqueRow(canvas).then((row) => {
+      if (cancelled) return;
+      if (row !== null && row > lowest) {
+        lowest = row;
+        const gap = ((canvas.height - 1 - row) / canvas.height) * cssHeight;
+        canvas.style.setProperty("--feet-gap", `${Math.max(0, Math.round(gap))}px`);
+      }
+      // ~9s: a 1.6 MB scene on a phone can take that long to finish drawing.
+      if (++tries < 30) timer = window.setTimeout(attempt, 300);
+    });
+  };
+  timer = window.setTimeout(attempt, 200);
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+  };
+}
+
+/** The objects that turn toward a tap, and how far at most, in radians. */
+const LOOK = [
+  // Positive y turns toward the right of the screen, positive x looks down.
+  { name: "Head Pivot", yaw: 0.3, pitch: 0.15 },
+  { name: "Eye Open R Pivot", yaw: 0.55, pitch: 0.35 },
+  { name: "Eye Open R Pivot 2", yaw: 0.55, pitch: 0.35 },
+];
+/** How long the character keeps looking at a tap before turning back. */
+const LOOK_HOLD_MS = 2200;
+
+/**
+ * The character looks at wherever the guest taps on the room around it.
+ *
+ * Tapping is how a guest plays with it, and a character that ignores the
+ * finger reads as a picture, not a pet. Head and eyes ease toward the tap,
+ * hold for a moment, then ease back to the scene's own pose. Driven from the
+ * page rather than the scene's own controls, which are switched off (see the
+ * canvas CSS) because they could orbit the character out of view.
+ */
+function useLookAt(app: Application | null, slot: HTMLElement | null) {
+  useEffect(() => {
+    if (!app || !slot) return;
+    const parts = LOOK.map((l) => ({ ...l, obj: app.findObjectByName(l.name) })).filter((p) => p.obj);
+    if (!parts.length) return;
+    const base = parts.map((p) => ({ x: p.obj!.rotation.x, y: p.obj!.rotation.y }));
+
+    // -1..1 on each axis: where the tap is, relative to the character's head.
+    const target = { x: 0, y: 0 };
+    const now = { x: 0, y: 0 };
+    let frame = 0;
+    let release = 0;
+
+    const step = () => {
+      now.x += (target.x - now.x) * 0.18;
+      now.y += (target.y - now.y) * 0.18;
+      parts.forEach((p, i) => {
+        p.obj!.rotation.y = base[i].y + now.x * p.yaw;
+        p.obj!.rotation.x = base[i].x + now.y * p.pitch;
+      });
+      app.requestRender();
+      const settled = Math.abs(target.x - now.x) < 0.002 && Math.abs(target.y - now.y) < 0.002;
+      frame = settled ? 0 : requestAnimationFrame(step);
+    };
+    const run = () => {
+      if (!frame) frame = requestAnimationFrame(step);
+    };
+
+    const onTap = (e: PointerEvent) => {
+      // The room, not the controls: a character that looks down at the
+      // bottom nav on every tab change -- or at "Selesai" in the instant its
+      // portrait is taken on /karakter -- is following the wrong thing.
+      if (e.target instanceof Element && e.target.closest("button, a, input, textarea, select, [role=button]")) return;
+      const r = slot.getBoundingClientRect();
+      if (!r.width) return;
+      const headX = r.left + r.width / 2;
+      const headY = r.top + r.height * 0.35;
+      const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+      target.x = clamp((e.clientX - headX) / (window.innerWidth / 2));
+      target.y = clamp((e.clientY - headY) / (window.innerHeight / 2));
+      run();
+      clearTimeout(release);
+      release = window.setTimeout(() => {
+        target.x = 0;
+        target.y = 0;
+        run();
+      }, LOOK_HOLD_MS);
+    };
+
+    document.addEventListener("pointerdown", onTap, { passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", onTap);
+      cancelAnimationFrame(frame);
+      clearTimeout(release);
+      parts.forEach((p, i) => {
+        p.obj!.rotation.x = base[i].x;
+        p.obj!.rotation.y = base[i].y;
+      });
+    };
+  }, [app, slot]);
 }
 
 /** Skip the 9 MB on the connections where it would hurt most. */
@@ -303,6 +442,9 @@ function reportWardrobe(app: Application): boolean {
    * visibility — that is what actually dresses the character.
    */
   win.splineEvents = () => app.getSplineEvents();
+
+  /** The Application itself, for poking at objects' rotation and the like. */
+  win.splineApp = app;
 
   /**
    * Flip visibility live, by substring or regex, to find which objects make up

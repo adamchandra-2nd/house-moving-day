@@ -17,8 +17,11 @@ export type CharacterStageValue = {
   activeSlot: HTMLElement | null;
   /** Dress the character without committing it to guest state (/karakter). */
   previewOutfit: (outfit: Outfit | null) => void;
-  /** The character as a cropped webp data URL, or null if it can't be read. */
-  capture: () => string | null;
+  /**
+   * The character as a cropped webp data URL, or null if it can't be read.
+   * The frame is taken when called; only the cropping happens afterwards.
+   */
+  capture: () => Promise<string | null>;
   /** Load now even though the connection heuristic chose to skip. */
   loadAnyway: () => void;
 };
@@ -29,7 +32,7 @@ const NOOP: CharacterStageValue = {
   claim: () => () => {},
   activeSlot: null,
   previewOutfit: () => {},
-  capture: () => null,
+  capture: async () => null,
   loadAnyway: () => {},
 };
 

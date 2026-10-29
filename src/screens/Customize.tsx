@@ -55,8 +55,11 @@ export function Customize({ name, initialOutfit, onConfirm }: Props) {
    * worth blocking check-in over — the 2D character stands in.
    */
   const finish = () => {
-    const sprite = stage.capture();
-    if (sprite) void storeSprite(sprite);
+    // Taken now, stored when ready: the capture grabs the frame before
+    // onConfirm navigates away and moves the canvas.
+    void stage.capture().then((sprite) => {
+      if (sprite) void storeSprite(sprite);
+    });
     onConfirm(outfit);
   };
 

@@ -5,9 +5,16 @@ export const DEFAULT_TEMPLATE =
 export const inviteLink = (name: string) => `hmd.potara.id/u/${name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "tamu"}`;
 export const fillTemplate = (t: string, name: string) => t.split("{nama}").join(name).split("{link}").join(inviteLink(name));
 
-/** Strips spaces/dashes and turns +62 into 0. Returns null if it can't be a WhatsApp number. */
+/**
+ * Keeps digits (and a leading +) and turns +62/62 into 0. Returns null if it
+ * can't be a WhatsApp number.
+ *
+ * Digits only, because a number copied from WhatsApp or the phone's contacts
+ * carries invisible direction marks around it, and people write "+62 (812)"
+ * or "+62 0812"; all of those are the same 0812 number.
+ */
 export function normalizePhone(raw: string): string | null {
-  const s = raw.replace(/[\s-]/g, "").replace(/^\+62/, "0").replace(/^62/, "0");
+  const s = raw.replace(/[^\d+]/g, "").replace(/^\+?620?/, "0");
   return /^08\d{8,11}$/.test(s) ? s : null;
 }
 

@@ -34,6 +34,33 @@ export function rundownMinute(at: Date = new Date()): number {
   return get("hour") * 60 + get("minute");
 }
 
+/** The calendar day in the event's timezone, as YYYY-MM-DD. */
+export function eventDay(at: Date = new Date()): string {
+  // en-CA formats as YYYY-MM-DD, which also compares correctly as a string.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: EVENT_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+}
+
+/** Before the event day: earlier than any session, so nothing has started. */
+export const BEFORE_EVENT = -1;
+/** After the event day: later than any session, so everything has ended. */
+export const AFTER_EVENT = 24 * 60;
+
+/**
+ * The rundown minute for an event on `day` (YYYY-MM-DD).
+ *
+ * The rundown only says what time of day each session is, not which day, so
+ * the bare time of day made a session at 10:15 "selesai" every evening --
+ * on any date, including the week before the event. Off the event day the
+ * clock now sits before or after every session instead.
+ */
+export function eventMinute(day: string | undefined, at: Date = new Date()): number {
+  if (!day) return rundownMinute(at);
+  const today = eventDay(at);
+  if (today < day) return BEFORE_EVENT;
+  if (today > day) return AFTER_EVENT;
+  return rundownMinute(at);
+}
+
 /**
  * The same, ticking.
  *
@@ -41,21 +68,23 @@ export function rundownMinute(at: Date = new Date()): number {
  * on these screens is finer than a minute, and a timer per second on a phone
  * left open all day is a battery cost for no visible change.
  */
-export function useRundownMinute(): number {
-  const [minute, setMinute] = useState(() => rundownMinute());
+export function useRundownMinute(day?: string): number {
+  const [minute, setMinute] = useState(() => eventMinute(day));
 
   useEffect(() => {
     let timer: number;
     const tick = () => {
-      setMinute(rundownMinute());
+      setMinute(eventMinute(day));
       const now = new Date();
       const msToNextMinute = 60_000 - (now.getSeconds() * 1000 + now.getMilliseconds());
       timer = window.setTimeout(tick, msToNextMinute + 50);
     };
     const now = new Date();
+    // Re-read at once too: a changed event day must not wait for the minute.
+    setMinute(eventMinute(day));
     timer = window.setTimeout(tick, 60_000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 50);
     return () => clearTimeout(timer);
-  }, []);
+  }, [day]);
 
   return minute;
 }
