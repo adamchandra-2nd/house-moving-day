@@ -261,23 +261,35 @@ function applySceneFixes(app: Application) {
  * feet 80px too high, and two of those in a row agreed with each other. An
  * unfinished frame can only ever show the feet higher than they are, never
  * lower, so the lowest reading is the real one.
+ *
+ * The clock only starts once the character has been seen at all: a 1.6 MB
+ * scene can take longer than any fixed window to draw on a slow phone, and a
+ * window that ran out first left the character floating for the whole visit.
+ * Each reading is also capped, because decoding a frame stalls while the tab
+ * is in the background -- a guest switching to WhatsApp mid-load -- and one
+ * stalled reading used to end the whole loop.
  * Returns a cancel function.
  */
 function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
   let timer = 0;
-  let tries = 0;
+  let waiting = 0; // readings before the character first showed up
+  let settling = 0; // readings since
   let lowest = -1;
   let cancelled = false;
+  const reading = () =>
+    Promise.race([lowestOpaqueRow(canvas), new Promise<null>((done) => window.setTimeout(() => done(null), 1500))]);
   const attempt = () => {
-    void lowestOpaqueRow(canvas).then((row) => {
+    void reading().then((row) => {
       if (cancelled) return;
       if (row !== null && row > lowest) {
         lowest = row;
         const gap = ((canvas.height - 1 - row) / canvas.height) * cssHeight;
         canvas.style.setProperty("--feet-gap", `${Math.max(0, Math.round(gap))}px`);
       }
-      // ~9s: a 1.6 MB scene on a phone can take that long to finish drawing.
-      if (++tries < 30) timer = window.setTimeout(attempt, 300);
+      // Up to a minute for the character to appear, then ~6s more to catch
+      // the parts that stream in after the first frame.
+      const more = lowest < 0 ? ++waiting < 120 : ++settling < 20;
+      if (more) timer = window.setTimeout(attempt, lowest < 0 ? 500 : 300);
     });
   };
   timer = window.setTimeout(attempt, 200);
