@@ -80,7 +80,9 @@ export function useAnnouncementsQuery(enabled: boolean) {
     queryKey: queryKeys.announcements,
     queryFn: api.announcements,
     enabled,
-    refetchInterval: 30_000,
+    // 10s: an announcement is "go to the photo spot now", and half a minute
+    // late is long enough for the guest to have missed it.
+    refetchInterval: 10_000,
     refetchOnWindowFocus: true,
   }).data;
 }

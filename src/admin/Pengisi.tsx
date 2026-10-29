@@ -393,9 +393,20 @@ function PersonEditor({
       <TextField label="Nama" value={name} onChange={setName} placeholder="Nama lengkap" maxLength={60} error={tried ? (nameError ?? undefined) : undefined} autoFocus />
       <div className="field">
         <span className="t-p-h5-bold field__label">Peran</span>
-        <div className="script-edit__labels" role="radiogroup" aria-label="Peran">
+        {/* The same pills as the Feedback tabs: the chosen one is filled, which
+            the dashed token chips used here before never showed. */}
+        <div className="pill-tabs" role="radiogroup" aria-label="Peran">
           {(["mc", "pembicara"] as const).map((r) => (
-            <button key={r} type="button" role="radio" aria-checked={role === r} className={`token-chip t-p-h5-bold${role === r ? " is-active" : ""}`} onClick={() => setRole(r)}>
+            <button
+              key={r}
+              type="button"
+              role="radio"
+              aria-checked={role === r}
+              className={`pill-tab t-p-h5-bold${role === r ? " is-active clay clay-dark" : ""}`}
+              style={{ cursor: "pointer" }}
+              onClick={() => setRole(r)}
+            >
+              {role === r && <Icon name="Check" size={16} />}
               {r === "mc" ? "MC" : "Pembicara"}
             </button>
           ))}

@@ -10,7 +10,8 @@ import { OfflineBanner } from "../components/SystemState";
 import { Toast, ToastIcon } from "../components/Toast";
 import { KENALAN_TARGET } from "../config";
 import { announcementKey, announcementSub, type GuestAnnouncement } from "../data/adapters";
-import { currentItem, nextItem } from "../data/agenda";
+import { currentItem, formatTime, nextItem } from "../data/agenda";
+import { BEFORE_EVENT } from "../data/clock";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import "./MainArea.css";
 
@@ -317,7 +318,8 @@ export function MainArea({
     <AgendaMini
       type="between"
       title={upcoming.title}
-      minutesLeft={upcoming.start - now}
+      minutesLeft={now === BEFORE_EVENT ? undefined : upcoming.start - now}
+      startLabel={formatTime(upcoming.start)}
       room={ROOMS[roomIndexById(upcoming.roomId)].name}
       here={roomIndex === roomIndexById(upcoming.roomId)}
       onClick={() => onTab("agenda")}

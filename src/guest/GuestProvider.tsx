@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { api, fromWire } from "../data/adapters";
 import { AGENDA, setAgenda } from "../data/agenda";
-import { useRundownMinute } from "../data/clock";
+import { eventDay, useRundownMinute } from "../data/clock";
 import { EventContext, type EventInfo } from "../data/eventContext";
 import { useAgendaQuery, useQuestionsQuery } from "../data/queries";
 import { queryClient } from "../data/queryClient";
@@ -95,8 +95,11 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
   const live = !demo && Boolean(session);
   useAgendaQuery(live);
 
-  /** The real clock, outside review cases (which pin their own `now`). */
-  const minute = useRundownMinute();
+  /**
+   * The real clock, outside review cases (which pin their own `now`), on
+   * the event's own day: before it nothing has started, after it all is over.
+   */
+  const minute = useRundownMinute(eventDay(event.startsAt));
   useEffect(() => {
     if (!isDemo.current) setState((s) => (s.now === minute ? s : { ...s, now: minute }));
   }, [minute]);
@@ -159,26 +162,32 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isDemo.current) return;
     let alive = true;
-    void api
-      .event()
-      .then((e) => {
-        if (!alive) return;
-        setEvent({
-          name: e.name,
-          host: e.host,
-          dateLabel: e.dateLabel,
-          place: e.place,
-          startsAt: e.startsAt ? new Date(e.startsAt) : EVENT.startsAt,
-          contact: e.contact ?? EVENT.contact,
+    const load = () =>
+      api
+        .event()
+        .then((e) => {
+          if (!alive) return;
+          setEvent({
+            name: e.name,
+            host: e.host,
+            dateLabel: e.dateLabel,
+            place: e.place,
+            startsAt: e.startsAt ? new Date(e.startsAt) : EVENT.startsAt,
+            contact: e.contact ?? EVENT.contact,
+          });
+          setState((s) => ({ ...s, countdownEnabled: e.countdown }));
+        })
+        .catch(() => {
+          // Offline, or no server in a design review. The bundled values show,
+          // which is what this screen showed before any of this existed.
         });
-        setState((s) => ({ ...s, countdownEnabled: e.countdown }));
-      })
-      .catch(() => {
-        // Offline, or no server in a design review. The bundled values show,
-        // which is what this screen showed before any of this existed.
-      });
+    void load();
+    // Re-read every minute, so the committee moving the date or switching
+    // the countdown reaches phones that are already open.
+    const timer = window.setInterval(() => void load(), 60_000);
     return () => {
       alive = false;
+      clearInterval(timer);
     };
   }, []);
 
