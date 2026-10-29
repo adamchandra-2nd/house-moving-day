@@ -95,3 +95,20 @@
 @media (prefers-reduced-motion: reduce) {
   .door__panel, .door__card { transition: none; }
 }
+
+/* The access-card video (DoorVideo): full screen, captions floating on it. */
+.door--video { justify-content: flex-end; background: var(--ink); }
+.door__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.door__caption--video {
+  position: relative;
+  margin-bottom: calc(max(var(--padding-extra-large), env(safe-area-inset-bottom)) + 40px);
+  padding: var(--padding-medium) var(--padding-large);
+  border-radius: var(--radius-infinite);
+}
+.door__skip--video { color: var(--text-inverse); opacity: 0.8; }

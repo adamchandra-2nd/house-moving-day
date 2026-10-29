@@ -1,5 +1,14 @@
 /** Guests who are currently present. Sample data until check-in is wired to the backend. */
-export type Guest = { id: string; name: string; role: string; question: string; outfit: string; code: string };
+export type Guest = {
+  id: string;
+  name: string;
+  role: string;
+  question: string;
+  outfit: string;
+  code: string;
+  /** Their character picture, as the server serves it; absent until they have one. */
+  sprite?: string;
+};
 
 export const GUESTS: Guest[] = [
   { id: "nanda", name: "Nanda", role: "Ilustrator", question: "Karakter kartun apa yang paling membekas waktu kecil?", outfit: "Hoodie", code: "1357" },

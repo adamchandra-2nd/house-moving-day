@@ -2,7 +2,7 @@ import type { AgendaItem } from "./agenda";
 import type { Guest } from "./guests";
 import type { AskedQuestion } from "./questions";
 import type { Outfit } from "./outfits";
-import { newIdempotencyKey, request } from "./http";
+import { API_URL, newIdempotencyKey, request } from "./http";
 import { loadToken } from "../guest/session";
 
 /**
@@ -89,7 +89,23 @@ export const api = {
 
   invite: (): Promise<Invite> => request("/api/invite", { token: token() }),
 
-  guests: (): Promise<Guest[]> => request("/api/guests", { token: token() }),
+  /**
+   * Who is here. A guest with an uploaded character comes with the URL of its
+   * picture: versioned by spriteAt, so it caches hard and a new upload is a
+   * new URL. The token rides in the query because an <img> cannot send a
+   * header, the same as gallery photos.
+   */
+  guests: async (): Promise<Guest[]> => {
+    const list = await request<(Guest & { spriteAt?: number })[]>("/api/guests", { token: token() });
+    const t = encodeURIComponent(token() ?? "");
+    return list.map(({ spriteAt, ...g }) =>
+      spriteAt ? { ...g, sprite: `${API_URL}/api/guests/${encodeURIComponent(g.id)}/sprite?t=${t}&v=${spriteAt}` } : g,
+    );
+  },
+
+  /** The picture of this guest's character, for everybody else's kenalan cards. */
+  uploadSprite: (dataUrl: string) =>
+    request<void>("/api/invite/sprite", { method: "PUT", token: token(), body: { data: dataUrl } }),
   /**
    * The rundown. The server sends sessions (with PIC, speaker, Q&A switch);
    * the guest screens only need the agenda half plus the Q&A switch, so that

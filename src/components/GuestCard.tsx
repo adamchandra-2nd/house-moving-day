@@ -11,9 +11,10 @@ export function GuestCard({ guest, collected, onOpen }: Props) {
   return (
     <article className="guest-card card">
       <button type="button" className="guest-card__art" onClick={onOpen} aria-label={`Buka kartu ${guest.name}`}>
-        <img src={dragonFront} alt="" draggable={false} />
-        {/* Outfit tag stands in for the outfit art until it's drawn */}
-        <span className="guest-card__outfit t-p-h5-bold">{guest.outfit}</span>
+        {/* Their own character, outfit and all; the bundled art until they have one. */}
+        <img src={guest.sprite ?? dragonFront} alt="" draggable={false} />
+        {/* Without the picture the tag is the only sign of what they wear. */}
+        {!guest.sprite && guest.outfit && <span className="guest-card__outfit t-p-h5-bold">{guest.outfit}</span>}
         <span className={`guest-card__status${collected ? " is-done clay clay-accent" : " clay clay-light"}`} aria-hidden="true">
           <Icon name={collected ? "Check" : "UserPlus"} size={16} />
         </span>

@@ -7,6 +7,7 @@ import { OUTFIT_CATEGORIES, outfitSummary, type Outfit, type OutfitCategory } fr
 import { ROOMS } from "../data/rooms";
 import { useCharacterStage } from "../character/characterStageContext";
 import { storeSprite } from "../character/sprite";
+import { api } from "../data/adapters";
 import "./Customize.css";
 
 
@@ -58,7 +59,11 @@ export function Customize({ name, initialOutfit, onConfirm }: Props) {
     // Taken now, stored when ready: the capture grabs the frame before
     // onConfirm navigates away and moves the canvas.
     void stage.capture().then((sprite) => {
-      if (sprite) void storeSprite(sprite);
+      if (!sprite) return;
+      void storeSprite(sprite);
+      // For the other guests: their kenalan cards show this picture. In a
+      // review case there is no invite token and the upload is simply refused.
+      void api.uploadSprite(sprite).catch(() => undefined);
     });
     onConfirm(outfit);
   };
