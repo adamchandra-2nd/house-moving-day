@@ -1,3 +1,4 @@
+import { useEvent } from "../data/eventContext";
 import { Button } from "./Button";
 import { Character } from "./Character";
 import { Icon } from "./Icon";
@@ -21,9 +22,22 @@ const COPY = {
   offline: { title: "Koneksi terputus", body: "Progresmu aman tersimpan. Sambungkan internet lalu coba lagi." },
 };
 
+/** 0812…, +62 812… or 62812… all become the 62812… that wa.me wants. */
+const waNumber = (phone: string) => {
+  const d = phone.replace(/\D/g, "");
+  return d.startsWith("62") ? d : `62${d.replace(/^0/, "")}`;
+};
+
 /** Figma: System State — full-screen loading, error and offline. */
 export function SystemState({ type, onRetry, title, sub }: SystemStateProps) {
   const c = { title: title ?? COPY[type].title, body: sub ?? COPY[type].body };
+  /**
+   * Every error here ends in "minta bantuan panitia", so it gets a way to do
+   * that: the committee member on call, from Pengaturan. Hidden until a
+   * number is set -- an empty WhatsApp chat helps nobody.
+   */
+  const { contact } = useEvent();
+  const phone = type === "error" ? contact.phone.trim() : "";
   return (
     <main className="flow system-state screen-enter">
       <div className="flow__top" />
@@ -47,11 +61,28 @@ export function SystemState({ type, onRetry, title, sub }: SystemStateProps) {
               <span />
             </span>
           ) : (
-            <div className="panel__actions">
-              <Button block icon="ArrowRight" onClick={onRetry}>
-                Coba lagi
-              </Button>
-            </div>
+            // No retry handler means retrying cannot help (a dead invite link,
+            // no link at all): a button that does nothing is worse than none.
+            (onRetry || phone) && (
+              <div className="panel__actions">
+                {onRetry && (
+                  <Button block icon="ArrowRight" onClick={onRetry}>
+                    Coba lagi
+                  </Button>
+                )}
+                {phone && (
+                  <a
+                    className="btn btn--tertiary btn--large btn--block clay clay-light t-p-h3-bold"
+                    href={`https://wa.me/${waNumber(phone)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span>Hubungi {contact.name.trim() || "panitia"}</span>
+                    <Icon name="Headset" size={24} />
+                  </a>
+                )}
+              </div>
+            )
           )}
         </section>
       </div>

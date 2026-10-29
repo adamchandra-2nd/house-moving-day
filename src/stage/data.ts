@@ -60,7 +60,23 @@ export const allPeople = () => livePeople;
 export const sessionById = (id: string): Session | undefined => liveSessions.find((s) => s.id === id);
 
 /** Committee contact shown to outside MC/speakers. */
-export const PANITIA_CONTACT = { name: "Azwar (panitia)", phone: "0812 3456 7788" };
+export type StageContact = { name: string; phone: string };
+
+/** The review cases' contact; a live screen reads the committee's from /api/event. */
+export const PANITIA_CONTACT: StageContact = { name: "Azwar (panitia)", phone: "0812 3456 7788" };
+
+/**
+ * The contact in use, in a registry like the cast's above: the contact button
+ * sits in a dozen places and none of them should need it passed down.
+ * Written by useStageEvent; empty until a live screen has read it.
+ */
+let liveContact: StageContact = { name: "", phone: "" };
+export const setStageContact = (c: StageContact) => {
+  liveContact = c;
+};
+export const panitiaContact = () => liveContact;
+/** Who to call, for a label: "Hubungi Azwar", or plain "panitia" before a name is set. */
+export const contactLabel = () => `Hubungi ${liveContact.name || "panitia"}`;
 
 /** Script lines suggested by Claude from the rundown. Two variants so "Saran lain" has something to show. */
 export type ScriptPart = { label: "Pembuka" | "Poin" | "Transisi" | "Penutup"; text: string };

@@ -4,7 +4,8 @@ import { SystemState } from "../components/SystemState";
 import { api } from "../data/adapters";
 import { ApiError } from "../data/http";
 import { FLOW, tabPath } from "../routing/paths";
-import { clearToken, saveToken, tokenFromPath } from "./session";
+import { useGuest } from "./guestContext";
+import { clearToken, tokenFromPath } from "./session";
 
 /**
  * Where a personal invite link lands.
@@ -24,10 +25,13 @@ export function InviteRoute() {
 
   const [to, setTo] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const { startSession } = useGuest();
 
   useEffect(() => {
     if (!token) return;
-    saveToken(token);
+    // Not just saveToken(): a different guest's link on this phone must not
+    // inherit the previous guest's progress.
+    startSession(token);
 
     let live = true;
     api
@@ -48,10 +52,14 @@ export function InviteRoute() {
     return () => {
       live = false;
     };
-  }, [token]);
+  }, [token, startSession]);
 
   if (!token) return <SystemState type="error" title="Link tidak valid" sub="Cek lagi link undangan yang kamu terima." />;
-  if (error) return <SystemState {...messageFor(error)} />;
+  if (error) {
+    // Only a connection problem is worth retrying; a dead link stays dead.
+    const retry = error.revoked || error.unauthorized ? undefined : () => window.location.reload();
+    return <SystemState {...messageFor(error)} onRetry={retry} />;
+  }
   if (to) return <Navigate to={to} replace />;
   return <SystemState type="loading" />;
 }

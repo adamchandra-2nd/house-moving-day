@@ -9,8 +9,8 @@
  * MC's phone and the committee's laptop, which is the case the event has.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { pull, push, readCache, subscribe, writeCache } from "./remote";
-import { allSessions, SAMPLE_STAGE_QUESTIONS, SESSIONS, type McSignal, type ScriptPart, type SpeakerHelp, type StageQuestion } from "./data";
+import { loadStageToken, pull, push, readCache, subscribe, writeCache } from "./remote";
+import { allSessions, SAMPLE_STAGE_QUESTIONS, type McSignal, type ScriptPart, type SpeakerHelp, type StageQuestion } from "./data";
 
 export type StagePhase = "pre" | "live" | "ended";
 export type SpeakerStatus = "belum" | "siap" | "live" | "bantuan" | "selesai";
@@ -103,7 +103,10 @@ export function read(): StageState | null {
  */
 export function useStage(seed?: StageState) {
   const isSeed = useRef(Boolean(seed));
-  const [state, setState] = useState<StageState>(() => seed ?? read() ?? EMPTY_STAGE());
+  // The cache only paints for a signed-in stage: without a session it can
+  // only be left over from an earlier visit, and showing it would claim a
+  // session is running that nobody started.
+  const [state, setState] = useState<StageState>(() => seed ?? (loadStageToken() ? read() : null) ?? EMPTY_STAGE());
 
   useEffect(() => {
     if (isSeed.current) return;
@@ -120,18 +123,24 @@ export function useStage(seed?: StageState) {
         // what shows, which is the same thing this screen showed last time.
       });
 
-    return subscribe(null, (s) => {
+    const stop = subscribe(null, (s) => {
       if (!alive) return;
       writeCache(s);
       setState(s);
     });
+    return () => {
+      alive = false;
+      stop();
+    };
   }, []);
 
   const update = useCallback((fn: (s: StageState) => StageState) => {
     setState((prev) => {
       const next = fn(prev);
-      writeCache(next);
+      // A review case stays in this tab: caching it would paint a staged
+      // scenario on the next real visit.
       if (!isSeed.current) {
+        writeCache(next);
         void push(next, null, (latest) => fn(latest)).catch(() => {
           // Queued in neither direction: the next successful write carries
           // the whole document, so nothing is lost beyond this one hop.
@@ -173,7 +182,7 @@ export const sortedSessions = () => [...allSessions()].sort((a, b) => a.start - 
 
 /** Seconds left on the live session (negative = overtime). */
 export function remainingS(state: StageState, now: number) {
-  const s = SESSIONS.find((x) => x.id === state.liveId);
+  const s = allSessions().find((x) => x.id === state.liveId);
   if (!s) return 0;
   return Math.round((s.end - s.start) * 60 - (now - state.startedAt) / 1000);
 }
@@ -186,11 +195,11 @@ export function nextSession(state: StageState) {
 
 /** Scheduled clock minute "now" maps to, for display ("09.50"). */
 export function clockMinute(state: StageState, now: number) {
-  const s = SESSIONS.find((x) => x.id === state.liveId);
+  const s = allSessions().find((x) => x.id === state.liveId);
   if (!s) {
     if (state.phase === "ended") return 13 * 60 + 50;
     // Between sessions: right after the last one that finished (not a fixed morning time)
-    const done = SESSIONS.filter((x) => state.doneIds.includes(x.id));
+    const done = allSessions().filter((x) => state.doneIds.includes(x.id));
     return done.length ? Math.max(...done.map((x) => x.end)) : 8 * 60 + 45;
   }
   return s.start + Math.floor((now - state.startedAt) / 60_000);
@@ -209,27 +218,30 @@ export const fmtClock = (secs: number) => {
  * because the committee's laptop may not have looked at the stage state
  * since the MC started changing it, and writing on top of a stale cache
  * would roll the MC back to wherever this browser last was.
+ *
+ * `token` is the caller's own session (the committee passes its admin
+ * token); without one the stage's own session is used.
  */
-export async function patchStage(fn: (s: StageState) => StageState) {
+export async function patchStage(fn: (s: StageState) => StageState, token: string | null = null) {
   let base: StageState;
   try {
-    base = (await pull(null)) ?? read() ?? EMPTY_STAGE();
+    base = (await pull(token)) ?? read() ?? EMPTY_STAGE();
   } catch {
     base = read() ?? EMPTY_STAGE();
   }
   const next = fn(base);
   writeCache(next);
-  await push(next, null, (latest) => fn(latest));
+  await push(next, token, (latest) => fn(latest));
 }
 
-/** For the admin side: be told when the MC or speaker changes something. */
-export function useStageWatch(cb: (s: StageState) => void) {
+/** For the admin side: be told when the MC or speaker changes something. `token` as in patchStage. */
+export function useStageWatch(cb: (s: StageState) => void, token: string | null = null) {
   useEffect(
     () =>
-      subscribe(null, (s) => {
+      subscribe(token, (s) => {
         writeCache(s);
         cb(s);
       }),
-    [cb],
+    [cb, token],
   );
 }

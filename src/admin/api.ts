@@ -1,6 +1,9 @@
 import { API_URL, request } from "../data/http";
 import type { AdminEvent, AdminGuest, Announcement, EventFeedbackEntry } from "./data";
+import { useEffect } from "react";
 import type { Person } from "../stage/data";
+import { pull, push, subscribe, writeCache } from "../stage/remote";
+import { EMPTY_STAGE, read as readStage, type StageState } from "../stage/store";
 
 /**
  * The committee's half of the API.
@@ -12,7 +15,18 @@ import type { Person } from "../stage/data";
 
 const STORAGE_KEY = "hmd.admin.session";
 
+/** Who signed in, for the header. Not a credential: the token is. */
+const EMAIL_KEY = "hmd.admin.email";
+
 let session: string | null = null;
+
+export function loadSessionEmail(): string | null {
+  try {
+    return localStorage.getItem(EMAIL_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export function loadSession(): string | null {
   if (session) return session;
@@ -57,22 +71,24 @@ export type InvitePlan = {
 
 export const adminApi = {
   /**
-   * Step one of signing in: asks the server to send a PIN.
-   *
-   * It answers with the PIN in the body, because no mail service is wired up
-   * yet. That is a prototype shortcut and the server says so; it is also why
-   * this must not be deployed anywhere public with a real guest list behind
-   * it until the PIN actually travels by email.
+   * Step one of signing in. The server answers `{sent: true}` whatever the
+   * address; the PIN itself is the server's ADMIN_PIN, handed to the
+   * committee by whoever runs the server. It is never in the response.
    */
   requestPin: (email: string) =>
-    request<{ sent: boolean; pin?: string }>("/api/admin/login", { method: "POST", body: { email } }),
+    request<{ sent: boolean }>("/api/admin/login", { method: "POST", body: { email } }),
 
   verifyPin: async (email: string, pin: string) => {
-    const res = await request<{ token: string }>("/api/admin/verify", {
+    const res = await request<{ token: string; email?: string }>("/api/admin/verify", {
       method: "POST",
       body: { email, pin },
     });
     keepSession(res.token);
+    try {
+      localStorage.setItem(EMAIL_KEY, res.email ?? email);
+    } catch {
+      /* only the header's label is lost */
+    }
     return res;
   },
 
@@ -131,12 +147,39 @@ export const adminApi = {
   saveRundown: (events: AdminEvent[]) =>
     request<AdminEvent[]>("/api/admin/rundown", { method: "PUT", token: loadSession(), body: events }),
 
+  /** The committee's and the MC's (source "mc", sent from the stage). */
   announcements: () => request<Announcement[]>("/api/admin/announcements", { token: loadSession() }),
+
+  /** Shows it on guests' phones again; the answer carries the new `at`. */
+  resendAnnouncement: (id: string) =>
+    request<Announcement>(`/api/admin/announcements/${encodeURIComponent(id)}/resend`, { method: "POST", token: loadSession() }),
 
   sendAnnouncement: (a: { title: string; body: string; roomId: string | null }) =>
     request<Announcement>("/api/admin/announcements", { method: "POST", token: loadSession(), body: a }),
 
-  people: () => request<Person[]>("/api/admin/people", { token: loadSession() }),
+  people: () => request<AdminPerson[]>("/api/admin/people", { token: loadSession() }),
+
+  /** The server mints the id; it is what the personal stage link carries. */
+  addPerson: (p: Omit<Person, "id">) =>
+    request<AdminPerson>("/api/admin/people", { method: "POST", token: loadSession(), body: p }),
+
+  savePerson: ({ id, ...p }: Person) =>
+    request<AdminPerson>(`/api/admin/people/${encodeURIComponent(id)}`, { method: "PUT", token: loadSession(), body: p }),
+
+  /** The committee sent or copied the personal link: access becomes "terkirim". */
+  invitePerson: (id: string) =>
+    request<void>(`/api/admin/people/${encodeURIComponent(id)}/invite`, { method: "POST", token: loadSession() }),
+
+  /** Their link stops working, and a stage session they hold ends on its next request. */
+  revokePerson: (id: string) =>
+    request<void>(`/api/admin/people/${encodeURIComponent(id)}/access`, { method: "DELETE", token: loadSession() }),
+
+  restorePerson: (id: string) =>
+    request<void>(`/api/admin/people/${encodeURIComponent(id)}/access`, { method: "POST", token: loadSession() }),
+
+  /** Their sessions are left without a speaker, server-side. */
+  deletePerson: (id: string) =>
+    request<void>(`/api/admin/people/${encodeURIComponent(id)}`, { method: "DELETE", token: loadSession() }),
 
   // ---- Pengaturan ----
 
@@ -199,7 +242,17 @@ export type WireSettings = {
   countdown: boolean;
   finalFeedbackAt: number;
   codesChangedAt: number;
+  /** WhatsApp invitation with {nama} and {link}; "" means the server's built-in default. */
+  inviteTemplate: string;
+  /** The committee member on call, shown to guests, the MC and speakers. */
+  contact: { name: string; phone: string };
 };
+
+/** Where a personal stage link stands. Derived by the server, ignored on writes. */
+export type PersonAccess = "belum" | "terkirim" | "masuk" | "dicabut";
+
+/** An MC or speaker as the committee sees them: plus whether their link is out. */
+export type AdminPerson = Person & { access?: PersonAccess };
 
 /**
  * A photo as the committee sees it: the guest's view plus their own notes.
@@ -218,6 +271,65 @@ export type AdminPhoto = {
   censorReason?: string;
   checked?: boolean;
 };
+
+/**
+ * An MC's or speaker's personal link. It only says who they are; the stage
+ * code they type after opening it is what lets them in.
+ */
+export const stageLink = (p: Pick<Person, "id" | "role">) =>
+  `${window.location.origin}/${p.role === "mc" ? "mc" : "pembicara"}?p=${encodeURIComponent(p.id)}`;
+
+/** wa.me wants the number in international form: 0812... becomes 62812... */
+export const waLink = (phone: string, text: string) =>
+  `https://wa.me/${phone.replace(/\D/g, "").replace(/^0/, "62")}?text=${encodeURIComponent(text)}`;
+
+/**
+ * The shared stage document, with the committee's credential.
+ *
+ * stage/store's patchStage and useStageWatch pass no token, which falls back
+ * to the MC/speaker session -- one the committee's laptop does not have, so
+ * every write came back 401. The same three calls, with the admin session.
+ */
+export async function patchStageAsAdmin(fn: (s: StageState) => StageState) {
+  const token = loadSession();
+  let base: StageState;
+  try {
+    base = (await pull(token)) ?? readStage() ?? EMPTY_STAGE();
+  } catch {
+    base = readStage() ?? EMPTY_STAGE();
+  }
+  const next = fn(base);
+  writeCache(next);
+  await push(next, token, (latest) => fn(latest));
+}
+
+/**
+ * Empties the stage document: after a rehearsal, so the real day does not
+ * open on "Selesai". rev -1 tells the server to overwrite whatever revision
+ * it holds -- the point is to discard it. Answers with what the server now has.
+ */
+export async function resetStageAsAdmin(): Promise<StageState> {
+  const token = loadSession();
+  const empty = EMPTY_STAGE();
+  await request("/api/stage/state", { method: "PUT", token, body: { rev: -1, state: empty } });
+  writeCache(empty);
+  // Also brings stage/remote's revision up to date for the next write.
+  return (await pull(token)) ?? empty;
+}
+
+/** The current stage document, for the dashboard's first paint. */
+export const pullStageAsAdmin = () => pull(loadSession());
+
+export function useStageWatchAsAdmin(cb: (s: StageState) => void, enabled: boolean) {
+  useEffect(() => {
+    const token = loadSession();
+    if (!enabled || !token) return;
+    return subscribe(token, (s) => {
+      writeCache(s);
+      cb(s);
+    });
+  }, [cb, enabled]);
+}
 
 export const adminPhotoSrc = (id: string) =>
   `${API_URL}/api/admin/photos/${encodeURIComponent(id)}/image?t=${encodeURIComponent(loadSession() ?? "")}`;

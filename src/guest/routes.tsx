@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Navigate, Outlet, useNavigate, useParams } from "react-router-dom";
+import { Navigate, Outlet, useMatch, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BottomNav, type NavTab } from "../components/BottomNav";
 import { Button } from "../components/Button";
 import { Dialog } from "../components/Dialog";
@@ -8,13 +8,24 @@ import type { RewardState } from "../components/RoomHeader";
 import { SystemState } from "../components/SystemState";
 import { Toast, ToastIcon } from "../components/Toast";
 import { KENALAN_TARGET } from "../config";
-import { AGENDA, currentItem, eventEndedAt } from "../data/agenda";
-import { api } from "../data/adapters";
+import { currentItem, eventEndedAt, formatTime, hasQna, useAgenda, type AgendaItem } from "../data/agenda";
+import { announcementKey as seenKey, announcementSub, api, queryKeys, type GuestAnnouncement } from "../data/adapters";
 import { GALLERY_MAX, PHOTO_MAX_MB, type GalleryPhoto, type PickedPhoto } from "../data/gallery";
+import { GUESTS } from "../data/guests";
 import { photosApi, shrink } from "../data/photos";
-import { useCollectCard, useDeleteQuestion, useEditQuestion, useEventFeedback, useFinalFeedback, useGuests, useSendQuestion } from "../data/queries";
+import {
+  useAnnouncementsQuery,
+  useCollectCard,
+  useDeleteQuestion,
+  useEditQuestion,
+  useEventFeedback,
+  useFinalFeedback,
+  useGuests,
+  useSendQuestion,
+} from "../data/queries";
+import { queryClient } from "../data/queryClient";
 import { ROOMS, roomIndexById } from "../data/rooms";
-import { FLOW, TABS, tabPath } from "../routing/paths";
+import { FLOW, INVITE_PATH, TABS, tabPath } from "../routing/paths";
 import { AgendaScreen } from "../screens/AgendaScreen";
 import { AskScreen } from "../screens/AskScreen";
 import { CheckIn } from "../screens/CheckIn";
@@ -61,9 +72,25 @@ function StageHost({ children }: { children: React.ReactNode }) {
 }
 
 function SystemGate() {
-  const { state, set } = useGuest();
+  const { state, set, demo, session } = useGuest();
+  const onInviteLink = useMatch(INVITE_PATH);
   if (state.system) {
     return <SystemState type={state.system} onRetry={() => set({ system: state.system === "loading" ? null : "loading" })} />;
+  }
+  /**
+   * No invite link opened on this phone, and not a review case. There is no
+   * guest to be -- everything past this point is somebody's own RSVP, cards
+   * and questions -- so say where to start instead of showing a sample guest
+   * whose answers go nowhere.
+   */
+  if (!demo && !session && !onInviteLink) {
+    return (
+      <SystemState
+        type="error"
+        title="Buka link undangan pribadimu"
+        sub="Halaman ini hanya bisa dibuka lewat link undangan yang dikirim panitia ke WhatsApp-mu."
+      />
+    );
   }
   return <Outlet />;
 }
@@ -126,12 +153,15 @@ export function StartRoute() {
 }
 
 export function CheckInRoute() {
-  const { state } = useGuest();
+  const { state, demo } = useGuest();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   return (
     <CheckIn
       name={state.name}
       scenario={state.checkIn}
+      camera={!demo}
+      doorFromLink={demo ? undefined : (params.get("door") ?? undefined)}
       onBack={() => navigate(FLOW.start)}
       onCheckedIn={async (by, code) => {
         // Unlike the RSVP, this one is awaited: the door code is the server's
@@ -155,7 +185,7 @@ export function NarasiRoute() {
 }
 
 export function CustomizeRoute() {
-  const { state, set } = useGuest();
+  const { state, set, demo } = useGuest();
   const navigate = useNavigate();
   return (
     <Customize
@@ -170,7 +200,9 @@ export function CustomizeRoute() {
         void api.finishCharacter(outfit).catch(() => {
           /* queued or lost; GuestProvider re-reads it from the server on the next load */
         });
-        set({ outfit, roomIndex: 0, mainScenario: "intro", hadirAt: state.now });
+        // "intro" plays the sample arrival toasts ("Nanda baru saja hadir"),
+        // which are review copy; a real guest only gets the move notice.
+        set({ outfit, roomIndex: 0, mainScenario: demo ? "intro" : "masuk", hadirAt: state.now });
         navigate(tabPath("ruangan"));
       }}
     />
@@ -181,9 +213,16 @@ export function CustomizeRoute() {
 
 export function AppRoute() {
   const { tab } = useParams<{ tab: string }>();
-  const { state, set, toast, showToast } = useGuest();
+  const { state, set, toast, showToast, demo } = useGuest();
   const navigate = useNavigate();
-  const guestList = useGuests();
+  // Review cases use the sample guests; a real guest sees who is actually
+  // here, minus themselves -- their own card is not one to collect.
+  const liveGuests = useGuests(!demo);
+  const guestList = demo ? GUESTS : liveGuests.filter((g) => g.id !== state.guestId);
+  // Subscribing re-renders this route (and MainArea under it) when the
+  // committee edits the rundown.
+  const agenda = useAgenda();
+  const announcements = useAnnouncementsQuery(!demo);
 
   const sendQuestion = useSendQuestion();
   const editQuestion = useEditQuestion();
@@ -229,18 +268,118 @@ export function AppRoute() {
   const openAsk = useCallback(() => {
     if (live) set({ overlay: { type: "ask", eventId: live.id } });
   }, [live, set]);
+  // "Tanya pembicara" only for a session the committee opened for questions.
+  const canAsk = Boolean(live && hasQna(live));
+
+  /**
+   * The shared gallery.
+   *
+   * Above the early returns below: hooks after a conditional return made
+   * React throw "rendered more hooks" when moving from Ruangan to another tab.
+   *
+   * Loaded when the tab is first opened, then the list (not the images) is
+   * re-read every 20 s while it stays open, so new photos and the committee's
+   * censoring show up. The images themselves are cached by the browser for a
+   * day -- a photo's bytes never change, since an edit is a new photo.
+   */
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const [galleryFilter, setGalleryFilter] = useState<GalleryFilter>("semua");
+  const loadedGallery = useRef(false);
+
+  useEffect(() => {
+    if (tab !== "galeri") return;
+    if (!loadedGallery.current) {
+      loadedGallery.current = true;
+      setPhotosLoading(true);
+      void photosApi
+        .list()
+        .then(setPhotos)
+        .catch(() => {
+          // The screen has its own offline state; an empty list with that shown
+          // reads correctly.
+          loadedGallery.current = false;
+        })
+        .finally(() => setPhotosLoading(false));
+    }
+    if (demo) return;
+    // A failed poll keeps the list on screen; the next one tries again.
+    const timer = window.setInterval(() => void photosApi.list().then(setPhotos).catch(() => undefined), 20_000);
+    return () => clearInterval(timer);
+  }, [tab, demo]);
+
+  /**
+   * Photos come from the phone's library only -- no `capture`, so the app
+   * never asks for the camera itself.
+   */
+  const photoPicker = usePhotoPicker((files) => {
+    const r = readPicked(files, GALLERY_MAX - photos.filter((p) => p.mine).length);
+    if (r.picks.length) return set({ overlay: { type: "upload", initial: r } });
+    showToast({
+      icon: "Check",
+      title: "Tidak ada foto yang bisa diunggah",
+      sub: r.tooBig ? `Ukuran foto maksimal ${PHOTO_MAX_MB} MB.` : "Pilih file gambar dari galeri HP-mu.",
+    });
+  });
+
+  /**
+   * The committee moved a session: say so the way an announcement is said
+   * (MainArea's slot on Ruangan, the page toast elsewhere), and tag the card
+   * "Diubah" on Agenda. Compared poll to poll, never on the first load -- an
+   * empty rundown filling in is not a change.
+   */
+  const [rundownNotices, setRundownNotices] = useState<GuestAnnouncement[]>([]);
+  const prevAgenda = useRef(agenda);
+  useEffect(() => {
+    const prev = prevAgenda.current;
+    prevAgenda.current = agenda;
+    if (demo || prev.length === 0 || prev === agenda) return;
+    for (const item of agenda) {
+      const old = prev.find((a) => a.id === item.id);
+      const note = old && describeChange(old, item);
+      if (!note) continue;
+      set({ changedId: item.id });
+      setRundownNotices((list) => [...list, { id: `rundown-${item.id}`, title: "Rundown berubah", body: note, roomId: null, at: state.now }]);
+      return;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agenda]);
+
+  /**
+   * The newest committee announcement this guest has not seen, sent since
+   * they arrived (earlier ones were for the people already in the room).
+   * On Ruangan it shows in MainArea's notification slot; on the other tabs
+   * as the page toast.
+   */
+  // Seen is keyed by id *and* time: the committee's "kirim ulang" keeps the id
+  // and moves `at` to now, and that has to show again.
+  const unseen = [...(announcements ?? []), ...rundownNotices].filter((a) => a.at >= state.hadirAt && !state.seenAnnouncements.includes(seenKey(a)));
+  const announcement = unseen[unseen.length - 1];
+  // Marks everything waiting as seen, not just the one shown: a guest back
+  // from a dead zone gets the latest announcement, not a queue of old ones.
+  const unseenIds = unseen.map(seenKey).join(",");
+  const markAnnouncementSeen = useCallback(
+    () => set({ seenAnnouncements: [...state.seenAnnouncements, ...unseenIds.split(",").filter(Boolean)] }),
+    [set, state.seenAnnouncements, unseenIds],
+  );
+  useEffect(() => {
+    if (!announcement || tab === "ruangan") return;
+    showToast({ icon: "Megaphone", title: announcement.title, sub: announcementSub(announcement) });
+    markAnnouncementSeen();
+  }, [announcement, tab, showToast, markAnnouncementSeen]);
 
   if (!tab || !TABS.includes(tab as NavTab)) return <Navigate to={tabPath("ruangan")} replace />;
   const activeTab = tab as NavTab;
 
   const overlay = state.overlay;
-  const askEvent = overlay?.type === "ask" ? AGENDA.find((a) => a.id === overlay.eventId) : undefined;
+  const askEvent = overlay?.type === "ask" ? agenda.find((a) => a.id === overlay.eventId) : undefined;
   const askScreen = askEvent && (
     <AskScreen
       event={askEvent}
       roomName={ROOMS[roomIndexById(askEvent.roomId)].name}
       questions={state.questions.filter((q) => q.eventId === askEvent.id)}
-      closed={state.askClosed}
+      // Q&A switched off while the form was open reads as closed, not broken.
+      closed={state.askClosed || !hasQna(askEvent)}
       offline={state.askOffline}
       onBack={closeOverlay}
       onEdit={(id, text) => {
@@ -249,29 +388,34 @@ export function AppRoute() {
           return false;
         }
         set({ questions: state.questions.map((q) => (q.id === id ? { ...q, text, edited: true } : q)) });
-        editQuestion.mutate({ id, text });
+        // A "local-" question has no server id yet; there is nothing to edit there.
+        if (!id.startsWith("local-")) editQuestion.mutate({ id, text });
         return true;
       }}
       onDelete={(id) => {
         set({ questions: state.questions.filter((q) => q.id !== id) });
-        deleteQuestion.mutate(id);
+        if (!id.startsWith("local-")) deleteQuestion.mutate(id);
       }}
       onSend={(text, anonymous) => {
         const author = anonymous ? null : state.name;
         set({
           questions: [
             ...state.questions,
-            { id: `q${Date.now()}`, eventId: askEvent.id, text, author, mine: true, status: "terkirim", at: state.now },
+            { id: `local-${Date.now()}`, eventId: askEvent.id, text, author, mine: true, status: "terkirim", at: state.now },
           ],
         });
         // Shown as sent straight away; delivery is queued if the network is down.
-        sendQuestion.mutate({ eventId: askEvent.id, text, author, at: state.now });
+        // Once it lands, the refetch swaps the local copy for the server's.
+        sendQuestion.mutate(
+          { eventId: askEvent.id, text, author, at: state.now },
+          { onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.questions }) },
+        );
       }}
     />
   );
 
   // Per-event feedback is required: it takes over the screen until it's sent.
-  const due = AGENDA.find((a) => a.end <= state.now && a.end > state.hadirAt && !(a.id in state.eventFeedback));
+  const due = agenda.find((a) => a.end <= state.now && a.end > state.hadirAt && !(a.id in state.eventFeedback));
   if (due) {
     return (
       <EventFeedback
@@ -303,56 +447,16 @@ export function AppRoute() {
           offline={state.offline}
           scenario={state.mainScenario}
           onScenarioPlayed={onScenarioPlayed}
+          announcement={announcement}
+          onAnnouncementShown={markAnnouncementSeen}
           onOpenReward={openReward}
-          onAsk={openAsk}
+          onAsk={canAsk ? openAsk : undefined}
+          feedbackSent={state.feedbackSent}
         />
         {askScreen}
       </>
     );
   }
-
-  /**
-   * The shared gallery.
-   *
-   * Loaded once when the tab is first opened rather than on every mount:
-   * forty tiles is forty image requests, and a guest switching between tabs
-   * should not re-trigger them. The images themselves are cached by the
-   * browser for a day -- a photo's bytes never change, since an edit is a new
-   * photo.
-   */
-  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
-  const [photosLoading, setPhotosLoading] = useState(false);
-  const [galleryFilter, setGalleryFilter] = useState<GalleryFilter>("semua");
-  const loadedGallery = useRef(false);
-
-  useEffect(() => {
-    if (activeTab !== "galeri" || loadedGallery.current) return;
-    loadedGallery.current = true;
-    setPhotosLoading(true);
-    void photosApi
-      .list()
-      .then(setPhotos)
-      .catch(() => {
-        // The screen has its own offline state; an empty list with that shown
-        // reads correctly.
-        loadedGallery.current = false;
-      })
-      .finally(() => setPhotosLoading(false));
-  }, [activeTab]);
-
-  /**
-   * Photos come from the phone's library only -- no `capture`, so the app
-   * never asks for the camera itself.
-   */
-  const photoPicker = usePhotoPicker((files) => {
-    const r = readPicked(files, GALLERY_MAX - photos.filter((p) => p.mine).length);
-    if (r.picks.length) return set({ overlay: { type: "upload", initial: r } });
-    showToast({
-      icon: "Check",
-      title: "Tidak ada foto yang bisa diunggah",
-      sub: r.tooBig ? `Ukuran foto maksimal ${PHOTO_MAX_MB} MB.` : "Pilih file gambar dari galeri HP-mu.",
-    });
-  });
 
   /**
    * Shares the picked photos, shrinking each one first.
@@ -424,8 +528,9 @@ export function AppRoute() {
           ended={ended}
           onGoToRoom={goToRoom}
           onFeedback={() => onTab("feedback")}
-          onAsk={openAsk}
+          onAsk={(eventId) => set({ overlay: { type: "ask", eventId } })}
           feedbackSent={state.eventFeedback}
+          finalFeedbackSent={state.feedbackSent}
         />
       )}
       {activeTab === "kenalan" && (
@@ -455,9 +560,9 @@ export function AppRoute() {
           kenalanCount={count}
           roomsVisited={state.visited.length}
           submitted={state.feedbackSent}
-          onSubmit={() => {
+          onSubmit={(rating, note, moods) => {
             set({ feedbackSent: true });
-            finalFeedback.mutate({ rating: 0, note: "" });
+            finalFeedback.mutate({ rating, note, moods });
           }}
           onShareFallback={() =>
             showToast({ icon: "Share", title: "Screenshot kartumu", sub: "Lalu unggah ke Story Instagram dan tag Potara." })
@@ -509,7 +614,7 @@ export function AppRoute() {
           onShared={sharePhotos}
         />
       )}
-      {overlay?.type === "myqr" && <MyQr name={state.name} onClose={closeOverlay} />}
+      {overlay?.type === "myqr" && <MyQr name={state.name} code={state.code} onClose={closeOverlay} />}
       {overlay?.type === "reward" && <RewardDialog onClose={closeOverlay} onExchange={() => set({ overlay: { type: "voucher" } })} />}
 
       {toast && (
@@ -525,7 +630,16 @@ export function AppRoute() {
   );
 }
 
-
+/** One line on what moved, for the "Rundown berubah" notice; null when nothing a guest sees did. */
+function describeChange(old: AgendaItem, item: AgendaItem): string | null {
+  const d = item.start - old.start;
+  if (d > 0) return `${item.title} diundur ${d} menit.`;
+  if (d < 0) return `${item.title} dimajukan ${-d} menit.`;
+  if (item.roomId !== old.roomId) return `${item.title} pindah ke ${ROOMS[roomIndexById(item.roomId)].name}.`;
+  if (item.end !== old.end) return `${item.title} sekarang selesai ${formatTime(item.end)}.`;
+  if (item.title !== old.title) return `${old.title} sekarang jadi ${item.title}.`;
+  return null;
+}
 
 function RewardDialog({ onClose, onExchange }: { onClose: () => void; onExchange: () => void }) {
   return (

@@ -12,7 +12,7 @@ import type { Phase } from "./Dashboard";
 import { RoomPicker, TimePicker } from "./pickers";
 import { roomStyle, useHeight } from "./hooks";
 import { LiveTimer } from "./ui";
-import { PEOPLE } from "../stage/data";
+import type { Person } from "../stage/data";
 
 const SNAP = 5;
 const MIN_DURATION = 15;
@@ -27,6 +27,8 @@ type Props = {
   /** Review cases: open with a draft already changed / an event open in the editor. */
   initialDraft?: AdminEvent[];
   initialEditId?: string;
+  /** Who can be picked as a session's speaker: live, the API's list; review cases, the sample. */
+  people: Person[];
   onSave: (events: AdminEvent[], notify: boolean) => void;
 };
 
@@ -47,7 +49,7 @@ function conflicts(events: AdminEvent[]) {
  * Rundown editor: one coloured column per room, the whole day fitted to the panel. Drag a card to move it
  * (time and room), drag its bottom edge to change duration, or click it to edit. Changes stay a draft until saved.
  */
-export function Rundown({ events, now, phase, initialDraft, initialEditId, onSave }: Props) {
+export function Rundown({ events, now, phase, initialDraft, initialEditId, people, onSave }: Props) {
   const [draft, setDraft] = useState<AdminEvent[]>(initialDraft ?? events);
   const [editing, setEditing] = useState<AdminEvent | "new" | null>(initialEditId ? (events.find((e) => e.id === initialEditId) ?? null) : null);
   const [saving, setSaving] = useState(false);
@@ -264,6 +266,7 @@ export function Rundown({ events, now, phase, initialDraft, initialEditId, onSav
       {editing && (
         <EventEditor
           event={editing === "new" ? null : editing}
+          people={people}
           onClose={() => setEditing(null)}
           onApply={(ev) => {
             setDraft((d) => (d.some((x) => x.id === ev.id) ? d.map((x) => (x.id === ev.id ? ev : x)) : [...d, ev]));
@@ -342,7 +345,7 @@ export function Rundown({ events, now, phase, initialDraft, initialEditId, onSav
   );
 }
 
-function EventEditor({ event, onClose, onApply, onDelete }: { event: AdminEvent | null; onClose: () => void; onApply: (e: AdminEvent) => void; onDelete: (id: string) => void }) {
+function EventEditor({ event, people, onClose, onApply, onDelete }: { event: AdminEvent | null; people: Person[]; onClose: () => void; onApply: (e: AdminEvent) => void; onDelete: (id: string) => void }) {
   const [title, setTitle] = useState(event?.title ?? "");
   const [roomId, setRoomId] = useState(event?.roomId ?? ROOMS[0].id);
   const [start, setStart] = useState(event?.start ?? 13 * 60 + 30);
@@ -422,7 +425,7 @@ function EventEditor({ event, onClose, onApply, onDelete }: { event: AdminEvent 
       <div className="field">
         <span className="t-p-h5-bold field__label">Pembicara (opsional)</span>
         <div className="speaker-pick">
-          {[{ id: undefined, name: "Tanpa pembicara", title: "MC saja" }, ...PEOPLE.filter((p) => p.role === "pembicara")].map((p) => (
+          {[{ id: undefined, name: "Tanpa pembicara", title: "MC saja" }, ...people.filter((p) => p.role === "pembicara")].map((p) => (
             <button
               key={p.id ?? "none"}
               type="button"

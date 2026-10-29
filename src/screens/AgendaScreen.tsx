@@ -2,7 +2,7 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { useEvent } from "../data/eventContext";
-import { AGENDA, DAY_END, DAY_START, formatTime, statusAt, type AgendaStatus } from "../data/agenda";
+import { DAY_END, DAY_START, formatTime, hasQna, statusAt, useAgenda, type AgendaStatus } from "../data/agenda";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import "./AgendaScreen.css";
 
@@ -26,14 +26,18 @@ type Props = {
   ended: boolean;
   onGoToRoom: (roomIndex: number) => void;
   onFeedback: () => void;
-  onAsk: () => void;
+  /** Opens the question form for that session (several can run at once). */
+  onAsk: (eventId: string) => void;
   /** Per-event feedback already sent (event id → rating). */
   feedbackSent: Record<string, number>;
+  /** The final survey is in: the ended card points at the memory card instead. */
+  finalFeedbackSent: boolean;
 };
 
 /** Agenda as a day timeline: hour column on the left, cards sized by duration, and a live "now" line. */
-export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRoom, onFeedback, onAsk, feedbackSent }: Props) {
+export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRoom, onFeedback, onAsk, feedbackSent, finalFeedbackSent }: Props) {
   const EVENT = useEvent();
+  const agenda = useAgenda();
   const status = statusAt(now);
   const y = (min: number) => (min - DAY_START) * PX;
   const showNow = now >= DAY_START && now <= DAY_END;
@@ -51,8 +55,15 @@ export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRo
         <section className="card agenda-ended">
           <span className="t-p-h4-bold">Semua acara sudah selesai</span>
           <button type="button" className="agenda-ended__link t-p-h5-bold" onClick={onFeedback}>
-            Isi feedback dan dapatkan memory card →
+            {finalFeedbackSent ? "Lihat memory card-mu →" : "Isi feedback dan dapatkan memory card →"}
           </button>
+        </section>
+      )}
+
+      {agenda.length === 0 && (
+        <section className="card agenda-ended">
+          <span className="t-p-h4-bold">Rundown belum tersedia</span>
+          <span className="t-p-h5">Panitia sedang menyiapkan jadwalnya. Nanti muncul di sini.</span>
         </section>
       )}
 
@@ -67,7 +78,7 @@ export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRo
           <span key={h} className="timeline__half" style={{ top: y(h) }} />
         ))}
 
-        {AGENDA.map((item) => {
+        {agenda.map((item) => {
           const s = status[item.id];
           const tag = STATUS[s];
           const roomIndex = roomIndexById(item.roomId);
@@ -112,8 +123,9 @@ export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRo
                 )}
                 {!compact && <span className="agenda-card__time">{formatTime(item.start)}–{formatTime(item.end)}</span>}
               </span>
-              {s === "now" && (
-                <Button size="small" style="tertiary" icon="Message" onClick={onAsk}>
+              {/* Only where the committee switched Q&A on: no button that leads to a closed form */}
+              {s === "now" && hasQna(item) && (
+                <Button size="small" style="tertiary" icon="Message" onClick={() => onAsk(item.id)}>
                   Tanya pembicara
                 </Button>
               )}

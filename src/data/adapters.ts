@@ -37,10 +37,41 @@ export type Invite = {
   outfit: Outfit;
   /** The committee's switch for the pre-event countdown screen. */
   countdown: boolean;
-  event: { name: string; host: string; dateLabel: string; place: string; startsAt: string };
+  /**
+   * Whether the prize was handed over and the final feedback sent. Optional:
+   * an older API does not send these, and then the phone's own memory of
+   * them is what shows.
+   */
+  rewardClaimed?: boolean;
+  finalFeedback?: boolean;
+  /** Sessions this guest already rated, so the rating prompt does not come back on a second phone. */
+  ratedEvents?: string[];
+  event: { name: string; host: string; dateLabel: string; place: string; startsAt: string; contact?: Contact };
 };
 
+/** The committee member on call. Both "" when nobody is set: hide the button then. */
+export type Contact = { name: string; phone: string };
+
 export type Card = { guestId: string; note: string };
+
+/** A committee announcement, as GET /api/announcements answers it. */
+export type GuestAnnouncement = {
+  id: string;
+  title: string;
+  body: string;
+  roomId: string | null;
+  /** Rundown minute. A resend keeps the id and moves this to now. */
+  at: number;
+  /** Who announced it; optional for an older API. */
+  source?: "panitia" | "mc";
+};
+
+/** What a guest's `seenAnnouncements` holds: the committee's resend is a new one to see. */
+export const announcementKey = (a: GuestAnnouncement) => `${a.id}@${a.at}`;
+
+/** The body, signed quietly with who sent it: the MC on stage, or the committee. */
+export const announcementSub = (a: GuestAnnouncement) =>
+  a.source ? `${a.body} · dari ${a.source === "mc" ? "MC" : "panitia"}` : a.body;
 
 /** The public half of Invite: what is written on the invitation anyway. */
 export type PublicEvent = Invite["event"] & { countdown: boolean };
@@ -59,9 +90,18 @@ export const api = {
   invite: (): Promise<Invite> => request("/api/invite", { token: token() }),
 
   guests: (): Promise<Guest[]> => request("/api/guests", { token: token() }),
-  agenda: (): Promise<AgendaItem[]> => request("/api/agenda", { token: token() }),
+  /**
+   * The rundown. The server sends sessions (with PIC, speaker, Q&A switch);
+   * the guest screens only need the agenda half plus the Q&A switch, so that
+   * is all that is kept.
+   */
+  agenda: async (): Promise<AgendaItem[]> => {
+    const list = await request<AgendaItem[]>("/api/agenda", { token: token() });
+    return (list ?? []).map(({ id, start, end, title, roomId, qna }) => ({ id, start, end, title, roomId, qna }));
+  },
   questions: (): Promise<AskedQuestion[]> => request("/api/questions", { token: token() }),
   cards: (): Promise<Card[]> => request("/api/cards", { token: token() }),
+  announcements: (): Promise<GuestAnnouncement[]> => request("/api/announcements", { token: token() }),
 
   setRsvp: (rsvp: "ya" | "tidak") =>
     request<{ rsvp: string }>("/api/invite/rsvp", { method: "POST", token: token(), body: { rsvp } }),
@@ -132,7 +172,7 @@ export const api = {
     return f;
   },
 
-  sendFinalFeedback: async (payload: { rating: number; note: string }) => {
+  sendFinalFeedback: async (payload: { rating: number; note: string; moods?: string[] }) => {
     await request("/api/feedback/final", {
       method: "POST",
       token: token(),
@@ -143,15 +183,18 @@ export const api = {
   },
 
   /**
-   * Collecting is by the other guest's 4-digit code, which is what is printed
-   * on their screen. The server resolves it to a guest, so a typo is a clear
-   * "kode tidak ditemukan" rather than somebody else's card.
+   * The scan or the 4-digit code is checked on the card screen against the
+   * guest it was opened from; the server also accepts a bare `code` and
+   * resolves it, for a client that only has the number.
    */
   collectCard: async (c: CollectCard): Promise<CollectCard> => {
     await request("/api/cards", {
       method: "POST",
       token: token(),
-      body: { code: c.guestId, note: c.note },
+      // By id: the card was opened from the guest list, so the id is known.
+      // Sending it as `code` made the server look for a 4-digit code equal to
+      // a guest id, and every card came back "kode tidak ditemukan".
+      body: { guestId: c.guestId, note: c.note },
       idempotencyKey: newIdempotencyKey(),
     });
     return c;
@@ -183,6 +226,7 @@ export const queryKeys = {
   questions: ["questions"] as const,
   invite: ["invite"] as const,
   cards: ["cards"] as const,
+  announcements: ["announcements"] as const,
 };
 
 /** Mutation keys are stable strings so paused mutations survive a reload. */

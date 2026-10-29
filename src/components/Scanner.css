@@ -58,3 +58,21 @@
 @media (prefers-reduced-motion: reduce) {
   .scanner__line { animation: none; top: 50%; }
 }
+/* The real camera, under the corners and scan line. */
+.scanner__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.scanner__corner,
+.scanner__line,
+.scanner__badge,
+.scanner > svg {
+  z-index: 1;
+}
+.scanner__badge,
+.scanner > svg {
+  position: relative;
+}

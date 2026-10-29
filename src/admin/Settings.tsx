@@ -6,6 +6,8 @@ import { IconBadge } from "../components/IconBadge";
 import { TextField } from "../components/TextField";
 import { Toggle } from "../components/Toggle";
 import { formatTime } from "../data/agenda";
+import { normalizePhone } from "./invite";
+import { DoorQr } from "./DoorQr";
 import { DatePicker, PlacePicker, TimePicker, type Place } from "./pickers";
 import { CodeBoxes } from "./Rewards";
 import { Panel } from "./ui";
@@ -20,25 +22,49 @@ export type AdminSettings = {
   /** Minutes since 00:00. */
   finalFeedbackAt: number;
   codesChangedAt: number;
+  /** Edited on the Undangan page; "" means the server's built-in default. Carried here so a save never drops it. */
+  inviteTemplate: string;
+  /** The committee member on call, shown to guests, the MC and speakers. Both empty: nobody listed. */
+  contact: { name: string; phone: string };
 };
 
-type Props = { settings: AdminSettings; today: Date; onSave: (s: AdminSettings) => void; onCopied: (what: string) => void };
+type Props = {
+  settings: AdminSettings;
+  today: Date;
+  onSave: (s: AdminSettings) => void;
+  onCopied: (what: string) => void;
+  /** Live: empty the MC/speaker stage after a rehearsal. Resolves once the server has it. */
+  onResetStage?: () => Promise<void>;
+  /** Live: the printable door QR, read from the server. */
+  doorQr?: boolean;
+};
 
 /** Event settings: Akses (codes) is the ink hero; unsaved changes show a sticky save bar. */
-export function Settings({ settings, today, onSave, onCopied }: Props) {
+export function Settings({ settings, today, onSave, onCopied, onResetStage, doorQr = false }: Props) {
   const [s, setS] = useState(settings);
   const [tried, setTried] = useState(false);
   const [show, setShow] = useState({ door: true, pin: false });
   const [changing, setChanging] = useState<"doorCode" | "panitiaPin" | null>(null);
   const [draftCode, setDraftCode] = useState("");
+  const [resetting, setResetting] = useState<"confirm" | "busy" | null>(null);
   const set = (patch: Partial<AdminSettings>) => setS({ ...s, ...patch });
   const dirty = JSON.stringify(s) !== JSON.stringify(settings);
   const nameError = !s.eventName.trim() ? "Nama acara wajib diisi." : undefined;
   const placeError = !s.place ? "Pilih lokasi acara." : undefined;
+  // The contact is optional, but half of one is not: a name nobody can reach,
+  // or a number with no name to ask for.
+  const contactNameError = !s.contact.name.trim() && s.contact.phone.trim() ? "Isi nama kontaknya juga." : undefined;
+  const contactPhoneError =
+    s.contact.name.trim() && !normalizePhone(s.contact.phone) ? "Nomor WhatsApp belum benar, contoh 0812 3456 7890." : undefined;
 
   const save = () => {
     setTried(true);
-    if (!nameError && !placeError) onSave(s);
+    if (nameError || placeError || contactNameError || contactPhoneError) return;
+    const phone = s.contact.phone.trim() ? (normalizePhone(s.contact.phone) ?? "") : "";
+    // Kept here too, or the bar would stay up comparing "0812 3456…" with the saved "08123456…".
+    const next = { ...s, contact: { name: s.contact.name.trim(), phone } };
+    setS(next);
+    onSave(next);
   };
   const copy = (code: string, what: string) => {
     navigator.clipboard?.writeText(code).catch(() => undefined);
@@ -60,6 +86,23 @@ export function Settings({ settings, today, onSave, onCopied }: Props) {
           <DatePicker label="Tanggal" value={s.date} today={today} onChange={(d) => set({ date: d })} />
           <PlacePicker label="Tempat" value={s.place} onChange={(p) => set({ place: p })} />
           {tried && placeError && <span className="t-p-h5 field__hint field__hint--error">{placeError}</span>}
+          <TextField
+            label="Kontak panitia (opsional)"
+            value={s.contact.name}
+            onChange={(v) => set({ contact: { ...s.contact, name: v } })}
+            placeholder="Nama panitia yang siaga"
+            maxLength={60}
+            error={tried ? contactNameError : undefined}
+          />
+          <TextField
+            label="WhatsApp kontak panitia"
+            value={s.contact.phone}
+            onChange={(v) => set({ contact: { ...s.contact, phone: v } })}
+            inputMode="tel"
+            placeholder="0812 3456 7890"
+            hint="Tampil di HP tamu, MC, dan pembicara kalau butuh bantuan."
+            error={tried ? contactPhoneError : undefined}
+          />
         </Panel>
 
         <section className="admin-panel akses-hero clay clay-dark">
@@ -102,6 +145,7 @@ export function Settings({ settings, today, onSave, onCopied }: Props) {
                 </div>
               </div>
             ))}
+            {doorQr && <DoorQr code={settings.doorCode} />}
             <span className="t-p-h5 akses-hero__note">Terakhir diganti {formatTime(s.codesChangedAt)} oleh Admin.</span>
           </div>
         </section>
@@ -113,6 +157,14 @@ export function Settings({ settings, today, onSave, onCopied }: Props) {
           </div>
           <TimePicker label="Feedback akhir dibuka jam" value={s.finalFeedbackAt} onChange={(m) => set({ finalFeedbackAt: m })} />
           <span className="t-p-h5 field__hint">Sebelum jam ini, tab Feedback di HP tamu terkunci.</span>
+          {onResetStage && (
+            <>
+              <Button size="small" style="tertiary" icon="Trash" onClick={() => setResetting("confirm")}>
+                Reset panggung
+              </Button>
+              <span className="t-p-h5 field__hint">Setelah gladi: layar MC dan pembicara kembali ke awal acara.</span>
+            </>
+          )}
         </Panel>
       </div>
 
@@ -137,6 +189,33 @@ export function Settings({ settings, today, onSave, onCopied }: Props) {
         </div>
       )}
 
+      {resetting && onResetStage && (
+        <Dialog
+          icon="Trash"
+          iconTone="red"
+          title="Reset panggung?"
+          description="Semua status sesi, sinyal, dan pertanyaan di layar MC/pembicara akan dikosongkan. Data tamu tidak terhapus."
+          onClose={() => setResetting(null)}
+          actions={
+            <>
+              <Button
+                style="danger"
+                disabled={resetting === "busy"}
+                onClick={() => {
+                  setResetting("busy");
+                  // Closed either way: the caller says how it went.
+                  void onResetStage().finally(() => setResetting(null));
+                }}
+              >
+                {resetting === "busy" ? "Mereset…" : "Reset panggung"}
+              </Button>
+              <Button style="tertiary" onClick={() => setResetting(null)}>
+                Batal
+              </Button>
+            </>
+          }
+        />
+      )}
       {changing && (
         <Dialog
           form

@@ -1,20 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { api, fromWire } from "../data/adapters";
+import { AGENDA, setAgenda } from "../data/agenda";
+import { useRundownMinute } from "../data/clock";
 import { EventContext, type EventInfo } from "../data/eventContext";
+import { useAgendaQuery, useQuestionsQuery } from "../data/queries";
+import { queryClient } from "../data/queryClient";
+import type { AskedQuestion } from "../data/questions";
 import { EVENT } from "../config";
 import { SCENARIOS } from "../routing/scenarios";
 import { SCENARIO_PARAM } from "../routing/paths";
 import { GuestContext, type GuestContextValue, type PageToast } from "./guestContext";
-import { loadToken } from "./session";
+import { loadToken, saveToken } from "./session";
 import { INITIAL, flushProgress, resumeState, saveProgress, type GuestState } from "./state";
 
 const scenarioFor = (token: string | null) => (token ? SCENARIOS[token] : undefined);
 
+/**
+ * Server questions plus the ones this phone sent that the server has not
+ * echoed back yet (queued offline, or still in flight). Those carry a
+ * "local-" id until then; once the server's copy arrives, it replaces them.
+ */
+function mergeQuestions(server: AskedQuestion[], local: AskedQuestion[]): AskedQuestion[] {
+  const pending = local.filter(
+    (q) => q.id.startsWith("local-") && !server.some((s) => s.mine && s.eventId === q.eventId && s.text === q.text),
+  );
+  return [...server, ...pending];
+}
+
 export function GuestProvider({ children }: { children: React.ReactNode }) {
   const [params] = useSearchParams();
-  const token = params.get(SCENARIO_PARAM);
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
+  // An old `#token` review link is rewritten to ?demo= by ScenarioGate, but
+  // only after this first render -- read it here too so the live session
+  // never starts up underneath a review case.
+  const token = params.get(SCENARIO_PARAM) ?? (hash.replace(/^#/, "") || null);
 
   // A scenario seeds the state on the first paint, so a review case never
   // flashes the live state before swapping.
@@ -36,7 +56,11 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
    * A reload clears it.
    */
   const isDemo = useRef(Boolean(scenarioFor(token)));
+  const [demo, setDemo] = useState(isDemo.current);
   const lastToken = useRef(token);
+
+  /** The invite this session belongs to; changes when another link is opened. */
+  const [session, setSession] = useState<string | null>(() => loadToken());
 
   const set = useCallback((patch: Partial<GuestState>) => setState((s) => ({ ...s, ...patch })), []);
 
@@ -58,9 +82,57 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
     const s = scenarioFor(token);
     if (!s) return;
     isDemo.current = true;
+    setDemo(true);
     setState({ ...INITIAL, ...s.state });
     setToast(null);
   }, [token]);
+
+  // Review cases run on the sample rundown; everything live reads the server's.
+  useEffect(() => {
+    if (demo) setAgenda(AGENDA);
+  }, [demo]);
+
+  const live = !demo && Boolean(session);
+  useAgendaQuery(live);
+
+  /** The real clock, outside review cases (which pin their own `now`). */
+  const minute = useRundownMinute();
+  useEffect(() => {
+    if (!isDemo.current) setState((s) => (s.now === minute ? s : { ...s, now: minute }));
+  }, [minute]);
+
+  /**
+   * Questions from the server, so the MC reading or answering one shows up on
+   * the guest's phone. Polled in data/queries.ts.
+   */
+  const serverQuestions = useQuestionsQuery(live);
+  useEffect(() => {
+    if (!live || !serverQuestions) return;
+    setState((s) => ({ ...s, questions: mergeQuestions(serverQuestions, s.questions) }));
+  }, [live, serverQuestions]);
+
+  /**
+   * Banks a token from an invite link. Opening a different guest's link on
+   * this phone starts that guest's session from scratch: their own saved
+   * progress (if any), and none of the previous guest's cached reads or
+   * queued writes, which would otherwise be sent with the new token.
+   */
+  const startSession = useCallback((next: string) => {
+    const previous = loadToken();
+    const wasDemo = isDemo.current;
+    saveToken(next);
+    // An invite link is never a review case, even in a tab that was one.
+    isDemo.current = false;
+    setDemo(false);
+    if (previous === next && !wasDemo) return;
+    if (previous !== next) {
+      flushProgress();
+      queryClient.clear();
+    }
+    setAgenda([]);
+    setState(resumeState());
+    setSession(next);
+  }, []);
 
   /**
    * Hydrate from the server once, if this browser is holding an invite token.
@@ -97,6 +169,7 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
           dateLabel: e.dateLabel,
           place: e.place,
           startsAt: e.startsAt ? new Date(e.startsAt) : EVENT.startsAt,
+          contact: e.contact ?? EVENT.contact,
         });
         setState((s) => ({ ...s, countdownEnabled: e.countdown }));
       })
@@ -109,34 +182,90 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const hydrated = useRef(false);
+  // Once per invite: re-runs when startSession() switches to another one, or
+  // leaves a review case. Then re-read every 30 s and on focus, so what the
+  // committee or another phone changed -- the prize handed over, a card
+  // collected, the survey sent -- shows up without a reload.
   useEffect(() => {
-    if (isDemo.current || hydrated.current || !loadToken()) return;
-    hydrated.current = true;
+    if (demo || !session) return;
 
-    let live = true;
-    void (async () => {
+    let alive = true;
+    let first = true;
+    const load = async () => {
       try {
         const [invite, cards] = await Promise.all([api.invite(), api.cards()]);
-        if (!live) return;
+        if (!alive) return;
+        const fromServer = Object.fromEntries(cards.map((c) => [c.guestId, c.note]));
+        const initial = first;
+        first = false;
         setState((s) => ({
           ...s,
+          guestId: invite.guestId,
           name: invite.name,
-          outfit: fromWire(invite.outfit),
-          collected: Object.fromEntries(cards.map((c) => [c.guestId, c.note])),
+          code: invite.code,
+          // Only on the first read: a later one could land between "selesai"
+          // and the server storing it, and put the old character back.
+          outfit: initial ? fromWire(invite.outfit) : s.outfit,
+          // A re-read keeps cards this phone collected that are still queued.
+          collected: initial ? fromServer : { ...fromServer, ...s.collected },
           // The committee's switch, not the bundle's constant. Sent with the
           // invite as well as on /api/event so a guest who opens their link
           // gets both in one trip.
           countdownEnabled: invite.countdown,
+          // Only when the server says so: an older API without these fields
+          // leaves what this phone remembers.
+          rewardClaimed: invite.rewardClaimed ?? s.rewardClaimed,
+          // Either side saying "sent" wins: a survey sent offline is still
+          // queued on this phone, and must not be asked for a second time.
+          feedbackSent: Boolean(invite.finalFeedback) || s.feedbackSent,
+          // Sessions rated on another phone count as rated here too. The
+          // server does not say what they were rated, and only "rated or not"
+          // is read anywhere, so 0 stands in; this phone's own ratings stay.
+          eventFeedback: {
+            ...Object.fromEntries((invite.ratedEvents ?? []).map((id) => [id, 0])),
+            ...s.eventFeedback,
+          },
         }));
+        if (invite.event?.contact) {
+          const contact = invite.event.contact;
+          setEvent((e) => ({ ...e, contact }));
+        }
       } catch {
         // See above.
       }
-    })();
-    return () => {
-      live = false;
     };
-  }, []);
+    void load();
+    const timer = window.setInterval(() => void load(), 30_000);
+    const onFocus = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [session, demo]);
+
+  /**
+   * The real connection, outside review cases (which set `offline` to show
+   * the banner). Only the plain banner: the ask and rating forms queue their
+   * writes offline, so blocking them on it would trap a guest behind a
+   * required rating -- their offline variants stay review-only.
+   */
+  useEffect(() => {
+    if (demo) return;
+    const sync = () => setState((s) => (s.offline === !navigator.onLine ? s : { ...s, offline: !navigator.onLine }));
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, [demo]);
 
   useEffect(() => {
     if (isDemo.current) return;
@@ -155,7 +284,10 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const value = useMemo<GuestContextValue>(() => ({ state, set, toast, showToast }), [state, set, toast, showToast]);
+  const value = useMemo<GuestContextValue>(
+    () => ({ state, set, toast, showToast, demo, session, startSession }),
+    [state, set, toast, showToast, demo, session, startSession],
+  );
 
   return (
     <EventContext.Provider value={event}>

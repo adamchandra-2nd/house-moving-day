@@ -6,34 +6,32 @@ import { Icon } from "../components/Icon";
 import { IconBadge } from "../components/IconBadge";
 import type { IconName } from "../components/iconPaths";
 import { Toast, ToastIcon } from "../components/Toast";
-import { EVENT } from "../config";
 import { formatTime } from "../data/agenda";
 import { ROOMS, roomIndexById } from "../data/rooms";
-import { allPeople, allSessions, HELP_LABEL, MC_SIGNALS, SIGNAL_TONE, PANITIA_CONTACT, QUESTION_GROUPS, TALKSHOW_FEEDBACK, type SpeakerHelp, type StageQuestionState } from "./data";
+import { allPeople, allSessions, HELP_LABEL, MC_SIGNALS, personById, SIGNAL_TONE, panitiaContact, QUESTION_GROUPS, TALKSHOW_FEEDBACK, type Person, type SpeakerHelp, type StageQuestionState } from "./data";
 import { PERF_LINKS, type PerfTab } from "./links";
 import { BigTimer, StageCard, StageShell, TimerStrip } from "./StageShell";
 import { StageLogin } from "./StageLogin";
-import { useStagePeople, useStageSessions } from "./live";
+import { StageNotice, useStageGate } from "./gate";
+import { useStageEvent, useStagePeople, useStageRoom, useStageSessions } from "./live";
 import { remainingS, useNow, useStage, useWakeLock, type StageState } from "./store";
 import { ContactButton, InkOption, MetaTags, QCard, ReadMode, Sheet, SpeakerRow, StageSystem } from "./ui";
 import { Welcome } from "./Welcome";
 
 /**
- * Who this speaker is, who the MC is, and which session is theirs -- read at
- * render rather than at import.
+ * Who the MC is, and which session is this speaker's -- read at render
+ * rather than at import.
  *
  * These were module constants over the bundled PEOPLE and SESSIONS, so a
  * speaker opening this screen saw the rundown as it was when the app was
  * built. The committee can move their session, rename it, or swap the
- * speaker; all three used to be invisible here.
+ * speaker; all three used to be invisible here. Who "this speaker" is comes
+ * from the sign-in (see PerformerApp); the review cases use the first one.
  */
-const mePerson = () => allPeople().find((p) => p.role === "pembicara");
+const firstSpeaker = () => allPeople().find((p) => p.role === "pembicara");
 const mcPerson = () => allPeople().find((p) => p.role === "mc");
-const mySession = () => {
-  const me = mePerson();
-  return me ? allSessions().find((s) => s.speakerId === me.id) : undefined;
-};
-const NO_ONE = { id: "", name: "Pengisi acara", role: "pembicara" as const, title: "", phone: "" };
+const mySession = (me: Person) => (me.id ? allSessions().find((s) => s.speakerId === me.id) : undefined);
+const NO_ONE: Person = { id: "", name: "Pengisi acara", role: "pembicara", title: "", phone: "" };
 const roomName = (id: string) => ROOMS[roomIndexById(id)].name;
 /** Same order as the admin rating donut (1★ red … 5★ green). */
 const STAR_COLORS = ["", "#c62828", "#d6589f", "#8a63d2", "#2f6fdb", "#4e8a3e"];
@@ -44,21 +42,37 @@ export function PerformerApp({ token, tab }: { token: string; /** Tab from the U
   const [system, setSystem] = useState(sc ? sc.system : "404");
   const [login, setLogin] = useState(sc?.login);
   const [welcome, setWelcome] = useState(!!sc?.welcome);
-  useStageSessions();
-  useStagePeople();
-  const ME = mePerson() ?? NO_ONE;
-  const MY = mySession();
+  // "pembicara" is the real thing: a signed-in speaker and server data only.
+  const demo = token !== "pembicara";
+  const gate = useStageGate("pembicara", !demo);
+  const me = !demo && gate.state.kind === "in" ? gate.state.me : undefined;
+  const enabled = demo || Boolean(me);
+  useStageSessions({ demo, enabled });
+  useStagePeople({ demo, enabled });
+  const event = useStageEvent(demo);
+  const ME = (me ? (personById(me.id) ?? me) : demo ? firstSpeaker() : undefined) ?? NO_ONE;
+  const MY = mySession(ME);
   if (system) return <StageSystem kind={system} onRetry={() => setSystem(undefined)} />;
-  if (login) return <StageLogin person={ME} eventLabel={EVENT.name} initial={login} onDone={() => (setLogin(undefined), setWelcome(true))} />;
-  if (welcome) return <Welcome person={ME} sessions={MY ? [MY] : []} onDone={() => setWelcome(false)} />;
-  return <PerfMain token={token} initialTab={tab} />;
+  if (!demo) {
+    const g = gate.state;
+    if (g.kind === "error") return <StageSystem kind="error" onRetry={gate.retry} />;
+    if (g.kind === "login") return <StageLogin person={g.person} eventLabel={event.name} initial="link" onSignedIn={gate.signedIn} onDone={() => setWelcome(true)} />;
+    if (g.kind !== "in") return <StageNotice state={g} role="pembicara" />;
+  }
+  if (login) return <StageLogin person={ME} eventLabel={event.name} initial={login} demo onDone={() => (setLogin(undefined), setWelcome(true))} />;
+  if (welcome) return <Welcome person={ME} sessions={MY ? [MY] : []} event={event} onDone={() => setWelcome(false)} />;
+  return <PerfMain token={token} demo={demo} me={ME} initialTab={tab} />;
 }
 
-function PerfMain({ token, initialTab }: { token: string; initialTab?: PerfTab }) {
-  const ME = mePerson() ?? NO_ONE;
+/** Ratings for the speaker's own session, in one shape for the fixture and the server. */
+type Rating = { count: number; avg: number; counts: number[]; comments: string[] };
+
+function PerfMain({ token, demo, me: ME, initialTab }: { token: string; demo: boolean; me: Person; initialTab?: PerfTab }) {
   const MC = mcPerson() ?? { name: "MC" };
-  const MY = mySession();
+  const MY = mySession(ME);
   const sc = PERF_LINKS[token] ?? {};
+  // Per session, from the guests' feedback; counts[0] is 1 star (the server's order).
+  const room = useStageRoom();
   const [state, update] = useStage(sc.seed?.());
   const now = useNow();
   useWakeLock();
@@ -197,7 +211,7 @@ function PerfMain({ token, initialTab }: { token: string; initialTab?: PerfTab }
             </>
           ) : done ? (
             <>
-              <span className="t-p-h4">Terima kasih sudah berbagi! Rating dan komentar tamu sudah bisa kamu lihat.</span>
+              <span className="t-p-h4">Terima kasih sudah berbagi! {demo ? "Rating dan komentar" : "Rating"} tamu sudah bisa kamu lihat.</span>
               <Button block style="secondary" icon="Star" onClick={() => setTab("hasil")}>
                 Lihat hasil feedback
               </Button>
@@ -248,9 +262,13 @@ function PerfMain({ token, initialTab }: { token: string; initialTab?: PerfTab }
           <div className="info-row">
             <Icon name="Users" size={16} />
             <dt className="t-p-h5">Panitia</dt>
-            <dd className="t-p-h4-bold one-line">
-              {PANITIA_CONTACT.name} · {PANITIA_CONTACT.phone}
-            </dd>
+            {panitiaContact().phone ? (
+              <dd className="t-p-h4-bold one-line">
+                {[panitiaContact().name, panitiaContact().phone].filter(Boolean).join(" · ")}
+              </dd>
+            ) : (
+              <dd className="t-p-h5 stage-muted">Kontak panitia belum diatur</dd>
+            )}
           </div>
           <div className="info-row">
             <Icon name="MapPin" size={16} />
@@ -310,8 +328,18 @@ function PerfMain({ token, initialTab }: { token: string; initialTab?: PerfTab }
     </>
   );
 
-  const ratings = TALKSHOW_FEEDBACK.ratings;
-  const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+  // The fixture is the review cases' talkshow; live, the server's tally for
+  // this session. The API has no comments, so a live screen shows none.
+  const fixture = TALKSHOW_FEEDBACK.ratings;
+  const fromRoom = room.feedback[myId];
+  const rating: Rating = demo
+    ? {
+        count: fixture.length,
+        avg: fixture.reduce((a, b) => a + b, 0) / fixture.length,
+        counts: [1, 2, 3, 4, 5].map((s) => fixture.filter((r) => r === s).length),
+        comments: TALKSHOW_FEEDBACK.comments,
+      }
+    : { count: fromRoom?.count ?? 0, avg: fromRoom?.avg ?? 0, counts: fromRoom?.counts ?? [0, 0, 0, 0, 0], comments: [] };
   const hasil = (
     <>
       <header className="stage-head">
@@ -330,21 +358,36 @@ function PerfMain({ token, initialTab }: { token: string; initialTab?: PerfTab }
             <span className="t-p-h5 stage-muted">Tamu mengisi feedback begitu MC menutup sesi.</span>
           </div>
         </section>
+      ) : rating.count === 0 ? (
+        <section className="stage-card">
+          <div className="stage-card__body" style={{ alignItems: "center", textAlign: "center", padding: "var(--padding-extra-large) var(--padding-large)" }}>
+            <span className="icon-badge icon-badge--pink icon-badge--L clay clay-accent">
+              <Icon name="Star" size={28} />
+            </span>
+            <span className="t-p-h4-bold">Belum ada feedback</span>
+            <span className="t-p-h5 stage-muted">Rating dari tamu muncul di sini begitu mereka mengisinya. Layar ini diperbarui sendiri.</span>
+          </div>
+        </section>
       ) : (
         <>
-          <StageCard icon="Star" tone="pink" title="Rata-rata" aside={<Badge type="claimed" icon="Check">Mayoritas puas</Badge>}>
+          <StageCard
+            icon="Star"
+            tone="pink"
+            title="Rata-rata"
+            aside={(rating.counts[3] ?? 0) + (rating.counts[4] ?? 0) > rating.count / 2 ? <Badge type="claimed" icon="Check">Mayoritas puas</Badge> : undefined}
+          >
             <span className="mini-stat__value" style={{ fontSize: 48 }}>
-              {avg.toFixed(1).replace(".", ",")}
+              {rating.avg.toFixed(1).replace(".", ",")}
             </span>
-            <span className="t-p-h5 stage-muted">dari {ratings.length} tamu</span>
+            <span className="t-p-h5 stage-muted">dari {rating.count} tamu</span>
             <ul className="hl-list">
               {[5, 4, 3, 2, 1].map((s) => {
-                const n = ratings.filter((r) => r === s).length;
+                const n = rating.counts[s - 1] ?? 0;
                 return (
                   <li key={s} className="hl-item" style={{ gridTemplateColumns: "28px minmax(0,1fr) 72px", padding: "6px 0", border: 0 }}>
                     <span className="t-p-h5-bold">{s}★</span>
                     <span className="big-timer__bar" style={{ background: "var(--background-texture)", margin: 0 }}>
-                      <span style={{ width: `${(n / ratings.length) * 100}%`, background: STAR_COLORS[s] }} />
+                      <span style={{ width: `${(n / rating.count) * 100}%`, background: STAR_COLORS[s] }} />
                     </span>
                     <span className="t-p-h5 stage-muted" style={{ textAlign: "right" }}>
                       {n} tamu
@@ -354,16 +397,18 @@ function PerfMain({ token, initialTab }: { token: string; initialTab?: PerfTab }
               })}
             </ul>
           </StageCard>
-          <StageCard icon="Message" tone="pink" title={`Komentar · ${TALKSHOW_FEEDBACK.comments.length}`}>
-            <ul className="q-list">
-              {TALKSHOW_FEEDBACK.comments.map((c) => (
-                <li key={c} className="say-box">
-                  <span className="t-p-h5 stage-muted">Anonim</span>
-                  <span className="t-p-h4">{c}</span>
-                </li>
-              ))}
-            </ul>
-          </StageCard>
+          {rating.comments.length > 0 && (
+            <StageCard icon="Message" tone="pink" title={`Komentar · ${rating.comments.length}`}>
+              <ul className="q-list">
+                {rating.comments.map((c) => (
+                  <li key={c} className="say-box">
+                    <span className="t-p-h5 stage-muted">Anonim</span>
+                    <span className="t-p-h4">{c}</span>
+                  </li>
+                ))}
+              </ul>
+            </StageCard>
+          )}
         </>
       )}
     </>

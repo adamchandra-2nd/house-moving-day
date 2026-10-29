@@ -23,6 +23,11 @@ type Props = {
   failSend: boolean;
   onSend: (a: { title: string; body: string; roomId: string | null }) => void;
   onResend: (id: string) => void;
+  /**
+   * Live: any sent announcement can be shown on guests' phones again, not
+   * only a failed one. Review cases keep "kirim ulang" for failures.
+   */
+  resendAny?: boolean;
 };
 
 const ago = (min: number) => (min < 1 ? "baru saja" : min < 60 ? `${min} menit lalu` : `${Math.floor(min / 60)} jam lalu`);
@@ -43,12 +48,13 @@ function MetaRow({ icon, label, value, children }: { icon: IconName; label: stri
  * Manual announcements from the committee, for things outside the rundown. Guests get them as the
  * same toast they see for event notices, with an optional "Ke sana" button to a room.
  */
-export function Announcements({ history, recipients, now, failSend, onSend, onResend }: Props) {
+export function Announcements({ history, recipients, now, failSend, onSend, onResend, resendAny }: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [roomId, setRoomId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState(false);
+  const [resending, setResending] = useState<Announcement | null>(null);
   const ready = title.trim() && body.trim();
   const previewRoom = roomId ? roomIndexById(roomId) : 0;
 
@@ -140,11 +146,19 @@ export function Announcements({ history, recipients, now, failSend, onSend, onRe
             <Empty icon="Megaphone" tone="coral" title="Belum ada pengumuman" body="Pengumuman yang terkirim muncul di sini." />
           ) : (
             <ul className="ann-history">
-              {[...history].reverse().map((a) => (
+              {/* Newest first by when it last went out: a resend moves it back to the top. */}
+              {[...history].sort((x, y) => y.at - x.at).map((a) => (
                 <li key={a.id} className="ann-history__item">
                   <span className="ann-history__head">
                     <span className="t-p-h4-bold">{a.title}</span>
-                    {a.failed ? <Badge type="danger">Gagal</Badge> : <Badge type="read">Terkirim</Badge>}
+                    <span className="admin-actions">
+                      {a.source === "mc" && (
+                        <Badge type="ready" icon="Megaphone">
+                          MC
+                        </Badge>
+                      )}
+                      {a.failed ? <Badge type="danger">Gagal</Badge> : <Badge type="read">Terkirim</Badge>}
+                    </span>
                   </span>
                   <span className="t-p-h5 admin-muted">{a.body}</span>
                   <dl className="ann-meta">
@@ -172,10 +186,16 @@ export function Announcements({ history, recipients, now, failSend, onSend, onRe
                       }
                     />
                   </dl>
-                  {a.failed && (
+                  {a.failed ? (
                     <Button size="small" style="secondary" icon="ArrowRight" onClick={() => onResend(a.id)}>
                       Kirim ulang
                     </Button>
+                  ) : (
+                    resendAny && (
+                      <Button size="small" style="tertiary" icon="ArrowRight" onClick={() => setResending(a)}>
+                        Kirim ulang
+                      </Button>
+                    )
                   )}
                 </li>
               ))}
@@ -184,6 +204,30 @@ export function Announcements({ history, recipients, now, failSend, onSend, onRe
         </Panel>
       </div>
 
+      {resending && (
+        <Dialog
+          icon="Megaphone"
+          iconTone="coral"
+          title="Kirim ulang pengumuman?"
+          description={`“${resending.title}” muncul lagi di HP ${recipients} tamu yang sudah hadir.`}
+          onClose={() => setResending(null)}
+          actions={
+            <>
+              <Button
+                onClick={() => {
+                  onResend(resending.id);
+                  setResending(null);
+                }}
+              >
+                Kirim ulang
+              </Button>
+              <Button style="tertiary" onClick={() => setResending(null)}>
+                Kembali
+              </Button>
+            </>
+          }
+        />
+      )}
       {confirm && (
         <Dialog
           icon="Megaphone"

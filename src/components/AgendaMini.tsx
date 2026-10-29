@@ -12,11 +12,12 @@ type AgendaMiniProps =
       here: boolean;
       onClick: () => void;
       onGoToRoom: () => void;
-      /** Ask the speaker through the app (any live event). */
-      onAsk: () => void;
+      /** Ask the speaker through the app; absent when the session has no Q&A. */
+      onAsk?: () => void;
     }
   | { type: "between"; title: string; minutesLeft: number; room: string; here: boolean; onClick: () => void; onGoToRoom: () => void }
-  | { type: "ended"; onFeedback: () => void };
+  /** `feedbackSent`: the survey is in, so the button opens the memory card instead. */
+  | { type: "ended"; feedbackSent?: boolean; onFeedback: () => void };
 
 /** Figma: Agenda Mini — floating live-agenda summary. Now · Now Elsewhere · Between · Ended. */
 export function AgendaMini(props: AgendaMiniProps) {
@@ -32,11 +33,13 @@ export function AgendaMini(props: AgendaMiniProps) {
           </span>
           <span className="agenda-mini__text">
             <span className="t-p-h3-bold">Terima kasih sudah datang!</span>
-            <span className="t-p-h5 agenda-mini__next">Ceritakan pengalamanmu hari ini.</span>
+            <span className="t-p-h5 agenda-mini__next">
+              {props.feedbackSent ? "Feedbackmu sudah terkirim." : "Ceritakan pengalamanmu hari ini."}
+            </span>
           </span>
         </div>
         <Button block size="small" style="secondary" icon="ArrowRight" onClick={props.onFeedback}>
-          Isi feedback
+          {props.feedbackSent ? "Lihat memory card" : "Isi feedback"}
         </Button>
       </div>
     );
@@ -77,7 +80,7 @@ export function AgendaMini(props: AgendaMiniProps) {
         </span>
         <Icon name="ChevronRight" />
       </button>
-      {props.type === "now" && (
+      {props.type === "now" && props.onAsk && (
         <Button block size="small" style="tertiary" icon="Message" onClick={props.onAsk}>
           Tanya pembicara
         </Button>

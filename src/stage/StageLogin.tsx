@@ -3,13 +3,14 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import potaraLogo from "../assets/potara-logo.png";
+import { ApiError } from "../data/http";
 import { ROOMS } from "../data/rooms";
-import { PANITIA_CONTACT, type Person } from "./data";
+import { contactLabel, type Person } from "./data";
 import { setStageToken, stageLogin } from "./remote";
 import { ContactButton } from "./ui";
 import "./stage.css";
 
-/** Prototype code "sent" to WhatsApp. */
+/** The server's default STAGE_CODE, shown only on the review cases. */
 export const STAGE_CODE = "246810";
 const LEN = 6;
 const MAX_TRIES = 3;
@@ -17,13 +18,30 @@ const RESEND_S = 30;
 
 export type LoginStep = "link" | "kode" | "kode-salah" | "terkunci" | "dicabut";
 
-const maskPhone = (p: string) => `${p.slice(0, 4)} •••• ${p.slice(-3)}`;
+/** The server already masks the number it sends (0812•••••123); the bundled cast still has full ones. */
+const maskPhone = (p: string) => (!p ? "yang didaftarkan panitia" : p.includes("•") ? p : `${p.slice(0, 4)} •••• ${p.slice(-3)}`);
 
 /**
  * MC and speakers may come from outside Potara, so there is no account: the admin sends a personal link on
  * WhatsApp, and the first open is confirmed with a 6-digit code sent to the same number.
  */
-export function StageLogin({ person, eventLabel, initial, onDone }: Readonly<{ person: Person; eventLabel: string; initial: LoginStep; onDone: () => void }>) {
+export function StageLogin({
+  person,
+  eventLabel,
+  initial,
+  demo,
+  onSignedIn,
+  onDone,
+}: Readonly<{
+  person: Person;
+  eventLabel: string;
+  initial: LoginStep;
+  /** Review case: shows the demo code under the boxes. */
+  demo?: boolean;
+  /** Live sign-in: keeps the session and who it belongs to (see stage/gate.tsx). */
+  onSignedIn?: (token: string, person: Person) => void;
+  onDone: () => void;
+}>) {
   const [step, setStep] = useState<LoginStep>(initial);
   const [digits, setDigits] = useState<string[]>(() => (initial === "kode-salah" ? "135790".split("") : Array(LEN).fill("")));
   const [tries, setTries] = useState(initial === "kode-salah" ? 1 : 0);
@@ -52,10 +70,14 @@ export function StageLogin({ person, eventLabel, initial, onDone }: Readonly<{ p
   const check = (code: string) => {
     void stageLogin(code, person.id)
       .then((res) => {
-        setStageToken(res.token);
+        if (onSignedIn) onSignedIn(res.token, { ...person, ...res.person });
+        else setStageToken(res.token);
         onDone();
       })
-      .catch(() => {
+      .catch((e: unknown) => {
+        // Revoked between opening the link and typing the code: no number of
+        // tries gets past that, so do not count it as a wrong code.
+        if (e instanceof ApiError && e.status === 410) return setStep("dicabut");
         const n = tries + 1;
         setTries(n);
         setError(true);
@@ -91,7 +113,7 @@ export function StageLogin({ person, eventLabel, initial, onDone }: Readonly<{ p
               <h1 className="stage-login__title">Link ini sudah tidak berlaku</h1>
               <p className="t-p-h4 stage-login__body">Aksesmu sudah dicabut panitia, atau acaranya sudah selesai. Kalau ini keliru, hubungi panitia.</p>
             </div>
-            <ContactButton block label={`Hubungi ${PANITIA_CONTACT.name}`} />
+            <ContactButton block label={contactLabel()} />
           </>
         ) : step === "link" ? (
           <>
@@ -101,9 +123,9 @@ export function StageLogin({ person, eventLabel, initial, onDone }: Readonly<{ p
               </Badge>
             </span>
             <div className="stage-login__head">
-              <h1 className="stage-login__title">Halo, {person.name.split(" ")[0]}!</h1>
+              <h1 className="stage-login__title">Halo, {person.name.split(" ")[0] || "Pengisi acara"}!</h1>
               <p className="t-p-h4 stage-login__body">
-                Kamu {isMc ? "jadi MC" : `jadi performance (${person.title.toLowerCase()})`} di {eventLabel}. Untuk keamanan, kami kirim kode 6 angka ke WhatsApp {maskPhone(person.phone)}.
+                Kamu {isMc ? "jadi MC" : person.title ? `jadi performance (${person.title.toLowerCase()})` : "jadi performance"} di {eventLabel}. Untuk keamanan, kami kirim kode 6 angka ke WhatsApp {maskPhone(person.phone)}.
               </p>
             </div>
             <Button
@@ -181,7 +203,7 @@ export function StageLogin({ person, eventLabel, initial, onDone }: Readonly<{ p
                 {wait > 0 && step !== "terkunci" ? `Kirim ulang (${wait}d)` : "Kirim ulang kode"}
               </Button>
             </div>
-            <span className="t-p-h5 stage-muted">Kode demo: {STAGE_CODE}</span>
+            {demo && <span className="t-p-h5 stage-muted">Kode demo: {STAGE_CODE}</span>}
           </>
         )}
       </section>

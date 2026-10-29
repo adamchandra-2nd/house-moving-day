@@ -12,7 +12,8 @@ type Props = {
   kenalanCount: number;
   roomsVisited: number;
   submitted: boolean;
-  onSubmit: () => void;
+  /** The guest's own answers: the server refuses a rating outside 1..5. */
+  onSubmit: (rating: number, note: string, moods: string[]) => void;
   onShareFallback: () => void;
 };
 
@@ -85,7 +86,7 @@ export function FeedbackScreen({ name, kenalanCount, roomsVisited, submitted, on
 
       <TextField label="Pesan buat Potara (opsional)" value={note} onChange={setNote} placeholder="Tulis di sini…" multiline maxLength={280} />
 
-      <Button block disabled={!rating} onClick={onSubmit}>
+      <Button block disabled={!rating} onClick={() => onSubmit(rating, note.trim(), moods)}>
         Kirim feedback
       </Button>
     </div>
