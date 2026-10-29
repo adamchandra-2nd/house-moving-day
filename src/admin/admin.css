@@ -773,7 +773,8 @@
 .speaker-pick__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
 /* MC script editor */
-.naskah-item.is-clickable { cursor: pointer; border-radius: var(--radius-medium); transition: background 120ms ease; }
+/* Square: a radius here bent the row's bottom divider into a curve at both ends. */
+.naskah-item.is-clickable { cursor: pointer; border-radius: 0; transition: background 120ms ease; }
 .naskah-item.is-clickable:hover { background: var(--background-primary); }
 .script-edit { display: flex; flex-direction: column; gap: var(--spacing-medium); margin: 0; padding: 0; list-style: none; }
 .script-edit__item { display: flex; flex-direction: column; gap: var(--spacing-extra-small); }
