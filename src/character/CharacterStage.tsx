@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Application } from "@splinetool/runtime";
 import { ALL_OUTFIT_NODES, outfitNodes, type Outfit } from "../data/outfits";
 import { CharacterStageContext, type CharacterStageValue, type StageStatus } from "./characterStageContext";
-import { capture as captureCanvas } from "./capture";
+import { capture as captureCanvas, lowestOpaqueRow } from "./capture";
 import { SCENE } from "./scene";
 import "./CharacterStage.css";
 
@@ -151,15 +151,24 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
      * Sizes are CSS pixels: Spline multiplies by the scene's own pixel ratio
      * setting (Export → Pixel Ratio), so doing it here too would double it.
      */
+    const stopGrounding = { current: () => {} };
     const resize = () => {
       const { width, height } = activeSlot.getBoundingClientRect();
-      if (width && height) app?.setSize(width, height);
+      if (!width || !height) return;
+      app?.setSize(width, height);
+      stopGrounding.current();
+      stopGrounding.current = ground(canvas, height);
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(activeSlot);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      stopGrounding.current();
+    };
   }, [activeSlot, status]);
+
+  useLookAt(appRef.current, status === "ready" ? activeSlot : null);
 
   // Nothing on screen needs it, or the tab is in the background: stop drawing.
   useEffect(() => {
@@ -227,6 +236,122 @@ function applySceneFixes(app: Application) {
   if (unmatched.size) {
     console.warn(`[CharacterStage] scene.show/hide matched nothing for: ${[...unmatched].join(", ")}`);
   }
+}
+
+/**
+ * Moves the canvas down until the character's feet meet the bottom of its slot.
+ *
+ * The scene's camera frames the character with empty space under the feet,
+ * so with the canvas filling the slot the character floated above the floor
+ * shadow -- by a different amount in every room, since only the shadow and the
+ * slot are placed per screen. The gap is read off a rendered frame rather than
+ * hard-coded, so a re-exported scene with another framing still lands.
+ *
+ * Settles on two matching readings in a row: right after setSize() the buffer
+ * can be empty, and the first frames are drawn before the scene's camera has
+ * framed the character -- one early reading put the feet 100px too low.
+ * Returns a cancel function.
+ */
+function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
+  let timer = 0;
+  let tries = 0;
+  let last: number | null = null;
+  let cancelled = false;
+  const attempt = () => {
+    void lowestOpaqueRow(canvas).then((row) => {
+      if (cancelled) return;
+      if (row !== null && last !== null && Math.abs(row - last) <= 2) {
+        const gap = ((canvas.height - 1 - row) / canvas.height) * cssHeight;
+        canvas.style.setProperty("--feet-gap", `${Math.max(0, Math.round(gap))}px`);
+        return;
+      }
+      last = row;
+      if (++tries < 20) timer = window.setTimeout(attempt, 200);
+    });
+  };
+  timer = window.setTimeout(attempt, 200);
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+  };
+}
+
+/** The objects that turn toward a tap, and how far at most, in radians. */
+const LOOK = [
+  // Positive y turns toward the right of the screen, positive x looks down.
+  { name: "Head Pivot", yaw: 0.3, pitch: 0.15 },
+  { name: "Eye Open R Pivot", yaw: 0.55, pitch: 0.35 },
+  { name: "Eye Open R Pivot 2", yaw: 0.55, pitch: 0.35 },
+];
+/** How long the character keeps looking at a tap before turning back. */
+const LOOK_HOLD_MS = 2200;
+
+/**
+ * The character looks at wherever the guest taps -- the background, a card,
+ * the character itself.
+ *
+ * Tapping is how a guest plays with it, and a character that ignores the
+ * finger reads as a picture, not a pet. Head and eyes ease toward the tap,
+ * hold for a moment, then ease back to the scene's own pose. Driven from the
+ * page rather than the scene's own controls, which are switched off (see the
+ * canvas CSS) because they could orbit the character out of view.
+ */
+function useLookAt(app: Application | null, slot: HTMLElement | null) {
+  useEffect(() => {
+    if (!app || !slot) return;
+    const parts = LOOK.map((l) => ({ ...l, obj: app.findObjectByName(l.name) })).filter((p) => p.obj);
+    if (!parts.length) return;
+    const base = parts.map((p) => ({ x: p.obj!.rotation.x, y: p.obj!.rotation.y }));
+
+    // -1..1 on each axis: where the tap is, relative to the character's head.
+    const target = { x: 0, y: 0 };
+    const now = { x: 0, y: 0 };
+    let frame = 0;
+    let release = 0;
+
+    const step = () => {
+      now.x += (target.x - now.x) * 0.18;
+      now.y += (target.y - now.y) * 0.18;
+      parts.forEach((p, i) => {
+        p.obj!.rotation.y = base[i].y + now.x * p.yaw;
+        p.obj!.rotation.x = base[i].x + now.y * p.pitch;
+      });
+      app.requestRender();
+      const settled = Math.abs(target.x - now.x) < 0.002 && Math.abs(target.y - now.y) < 0.002;
+      frame = settled ? 0 : requestAnimationFrame(step);
+    };
+    const run = () => {
+      if (!frame) frame = requestAnimationFrame(step);
+    };
+
+    const onTap = (e: PointerEvent) => {
+      const r = slot.getBoundingClientRect();
+      if (!r.width) return;
+      const headX = r.left + r.width / 2;
+      const headY = r.top + r.height * 0.35;
+      const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+      target.x = clamp((e.clientX - headX) / (window.innerWidth / 2));
+      target.y = clamp((e.clientY - headY) / (window.innerHeight / 2));
+      run();
+      clearTimeout(release);
+      release = window.setTimeout(() => {
+        target.x = 0;
+        target.y = 0;
+        run();
+      }, LOOK_HOLD_MS);
+    };
+
+    document.addEventListener("pointerdown", onTap, { passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", onTap);
+      cancelAnimationFrame(frame);
+      clearTimeout(release);
+      parts.forEach((p, i) => {
+        p.obj!.rotation.x = base[i].x;
+        p.obj!.rotation.y = base[i].y;
+      });
+    };
+  }, [app, slot]);
 }
 
 /** Skip the 9 MB on the connections where it would hurt most. */
@@ -303,6 +428,9 @@ function reportWardrobe(app: Application): boolean {
    * visibility — that is what actually dresses the character.
    */
   win.splineEvents = () => app.getSplineEvents();
+
+  /** The Application itself, for poking at objects' rotation and the like. */
+  win.splineApp = app;
 
   /**
    * Flip visibility live, by substring or regex, to find which objects make up

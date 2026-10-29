@@ -1,6 +1,38 @@
 const ALPHA_FLOOR = 8;
 
 /**
+ * The lowest row of the canvas the character is drawn on, or null when the
+ * frame is empty or unreadable.
+ *
+ * Read through toDataURL(), not drawImage(canvas): drawing the Spline canvas
+ * straight onto a 2D one comes back fully transparent in Chromium, while the
+ * data URL carries the real frame. Scanned from the bottom up and stopped at
+ * the first opaque row, so it costs a few rows rather than the whole frame.
+ */
+export async function lowestOpaqueRow(canvas: HTMLCanvasElement): Promise<number | null> {
+  try {
+    const { width: w, height: h } = canvas;
+    if (!w || !h) return null;
+    const frame = new Image();
+    frame.src = canvas.toDataURL();
+    await frame.decode();
+    const scratch = document.createElement("canvas");
+    scratch.width = w;
+    scratch.height = h;
+    const ctx = scratch.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(frame, 0, 0);
+    for (let y = h - 1; y >= 0; y--) {
+      const { data } = ctx.getImageData(0, y, w, 1);
+      for (let i = 3; i < data.length; i += 4) if (data[i] > ALPHA_FLOOR) return y;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Reads the last rendered frame off the Spline canvas, cropped to the character.
  *
  * The 3D framing leaves transparent space around the character while the 2D art

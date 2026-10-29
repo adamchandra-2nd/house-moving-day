@@ -8,7 +8,15 @@
   display: block;
   /* The scene is transparent, so the room illustration behind stays visible. */
   background: transparent;
-  touch-action: none;
+  /* The scene ships with camera controls: a drag on the canvas -- or a swipe
+     between rooms that started on the character -- orbited the camera until
+     the character left the frame and never came back. Touches go to the
+     <Character> button (tap reactions) and the room track (swipes) instead;
+     where the character looks is driven from code (see useLookAt). */
+  pointer-events: none;
+  /* Set from the rendered frame so the feet, not the canvas edge, meet the
+     floor shadow -- the scene's camera leaves empty space under them. */
+  transform: translateY(var(--feet-gap, 0px));
 }
 
 /* Shown on /karakter only: there the guest is actively picking an outfit, so
