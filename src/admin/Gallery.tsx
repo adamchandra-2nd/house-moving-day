@@ -7,7 +7,6 @@ import { Icon } from "../components/Icon";
 import { TextField } from "../components/TextField";
 import { formatTime } from "../data/agenda";
 import { CENSOR_REASONS, CENSOR_REASON_MAX, type GalleryPhoto, type GalleryState } from "../data/gallery";
-import { ROOMS, roomIndexById } from "../data/rooms";
 import { Empty, Panel, Stat } from "./ui";
 
 export type GalleryTab = "semua" | "belum" | "disensor";
@@ -24,8 +23,6 @@ type Props = {
   onCheckAll: (ids: string[]) => void;
   onDownload: (photo: GalleryPhoto) => void;
 };
-
-const roomName = (id: string) => ROOMS[roomIndexById(id)].name;
 
 /** Galeri: every photo guests shared. The committee checks new ones and censors (blurs) anything inappropriate; it can be undone. */
 export function AdminGallery({ gallery, initialTab, selectedId, initialDialog, onSelect, onCensor, onCheckAll, onDownload }: Props) {
@@ -123,9 +120,7 @@ export function AdminGallery({ gallery, initialTab, selectedId, initialDialog, o
                   </span>
                   <span className="admin-gallery__info">
                     <span className="t-p-h4-bold admin-gallery__name">{p.author}</span>
-                    <span className="t-p-h5 admin-muted">
-                      {formatTime(p.at)} · {roomName(p.roomId)}
-                    </span>
+                    <span className="t-p-h5 admin-muted">{formatTime(p.at)}</span>
                   </span>
                 </button>
               ))}
@@ -177,12 +172,6 @@ export function AdminGallery({ gallery, initialTab, selectedId, initialDialog, o
               </span>
             </div>
             <dl className="guest-detail__list">
-              <div className="guest-detail__row">
-                <dt className="t-p-h5 admin-muted">Ruangan</dt>
-                <dd>
-                  <Badge type="room">{roomName(selected.roomId)}</Badge>
-                </dd>
-              </div>
               <div className="guest-detail__row">
                 <dt className="t-p-h5 admin-muted">Status</dt>
                 <dd>{selected.censored ? <Badge type="danger" icon="Lock">Disensor</Badge> : <Badge type="claimed">Tampil</Badge>}</dd>

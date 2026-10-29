@@ -235,6 +235,11 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
   const [stage, setStage] = useState<StageState | null>(null);
   /** Announcements sent from here that the server has not confirmed: a refresh must not drop them. */
   const drafts = useRef(new Set<string>());
+  /**
+   * Announcements deleted here: a refresh that left before the DELETE landed
+   * would otherwise bring the row back for one tick.
+   */
+  const removed = useRef(new Set<string>());
   const { phase, daysLeft } = live ? livePhase(settings.date, events, now) : { phase: demoPhase, daysLeft: 14 };
   const [scripts, setScripts] = useState<Record<string, ScriptPart[]>>(() => readStage()?.scripts ?? {});
   /**
@@ -281,7 +286,7 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
         // every page here maps over these.
         setGuests(rows ?? []);
         setEvents(rundown ?? []);
-        setAnnouncements(mergeAnnouncements(announced ?? [], [], drafts.current));
+        setAnnouncements(mergeAnnouncements(announced ?? [], [], drafts.current, removed.current));
         setSettings(fromWireSettings(set));
         setPeople(crew ?? []);
       } catch (e) {
@@ -333,7 +338,7 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
           // Rows just added here and not yet confirmed carry a placeholder
           // id (see onAdd); they stay until the server's answer replaces them.
           setGuests((gs) => [...gs.filter((g) => g.id.startsWith("baru-")), ...(rows ?? [])]);
-          setAnnouncements((list) => mergeAnnouncements(announced ?? [], list, drafts.current));
+          setAnnouncements((list) => mergeAnnouncements(announced ?? [], list, drafts.current, removed.current));
         })
         .catch((e: unknown) => {
           if (!alive) return;
@@ -842,7 +847,12 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
             void adminApi
               .sendAnnouncement(a)
               .then((saved) => {
-                drafts.current.delete(draft.id);
+                // Deleted while it was on its way: it has to go on the server too.
+                if (!drafts.current.delete(draft.id)) {
+                  removed.current.add(saved.id);
+                  void adminApi.deleteAnnouncement(saved.id).catch(() => undefined);
+                  return;
+                }
                 // A refresh may have brought the saved row in already.
                 setAnnouncements((list) => [...list.filter((x) => x.id !== draft.id && x.id !== saved.id), saved]);
               })
@@ -871,6 +881,21 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
                 notify("Megaphone", "Pengumuman terkirim ulang", `Muncul di HP ${saved.recipients} tamu.`);
               })
               .catch((e: unknown) => notify("Close", "Gagal mengirim ulang", e instanceof Error ? e.message : "Coba lagi."));
+          }}
+          onDelete={(id) => {
+            const row = announcements.find((a) => a.id === id);
+            setAnnouncements((list) => list.filter((a) => a.id !== id));
+            notify("Trash", "Pengumuman dihapus", "Hilang juga dari Notifikasi di HP tamu.");
+            // A draft the server never confirmed has nothing to delete there.
+            if (!live || !row || drafts.current.delete(id)) return;
+            removed.current.add(id);
+            void adminApi.deleteAnnouncement(id).catch((e: unknown) => {
+              // Already gone (another admin, or a retry) is what was asked for.
+              if (e instanceof ApiError && e.status === 404) return;
+              removed.current.delete(id);
+              setAnnouncements((list) => (list.some((a) => a.id === id) ? list : [...list, row].sort((a, b) => a.at - b.at)));
+              notify("Close", "Pengumuman gagal dihapus", e instanceof Error ? e.message : "Coba lagi.");
+            });
           }}
         />
       )}
@@ -1057,9 +1082,9 @@ function toWireSettings(s: AdminSettings): WireSettings {
  * Sorted by `at` so "the last one" -- the dashboard's card -- is the one that
  * most recently went out, resends included.
  */
-function mergeAnnouncements(server: Announcement[], local: Announcement[], drafts: Set<string>): Announcement[] {
+function mergeAnnouncements(server: Announcement[], local: Announcement[], drafts: Set<string>, removed: Set<string>): Announcement[] {
   const pending = local.filter((a) => drafts.has(a.id));
-  return [...server, ...pending].sort((a, b) => a.at - b.at);
+  return [...server.filter((a) => !removed.has(a.id)), ...pending].sort((a, b) => a.at - b.at);
 }
 
 /**

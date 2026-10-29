@@ -9,9 +9,6 @@
   gap: var(--spacing-extra-small);
   border-radius: var(--radius-infinite);
 }
-.room-header__profile {
-  padding: var(--padding-small) var(--padding-large) var(--padding-small) var(--padding-small);
-}
 /* Orange so the Kenalan feature always stands out from the other floating chips */
 .room-header__kenalan {
   background: var(--orange-splash);

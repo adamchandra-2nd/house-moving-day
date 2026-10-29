@@ -33,6 +33,17 @@ export const REVIEW_GROUPS: { title: string; links: { token: string; label: stri
       { token: "ruangan-hadiah", label: "Pengingat hadiah", note: "5 kartu, hadiah belum ditukar" },
       { token: "ruangan-selesai", label: "Acara selesai", note: "Feedback terbuka" },
       { token: "ruangan-offline", label: "Offline", note: "Banner offline" },
+      { token: "ruangan-foto-baru", label: "Foto baru di Galeri", note: "Toast + titik di tombol Galeri (kiri atas)" },
+      { token: "ruangan-pengumuman", label: "Pengumuman panitia masuk", note: "Toast + tersimpan di Notifikasi" },
+      { token: "ruangan-diajak-kenalan", label: "Diajak kenalan", note: "Raka ngajak kenalan: toast + Lihat kartu, tersimpan di Notifikasi" },
+    ],
+  },
+  {
+    title: "Notifikasi",
+    links: [
+      { token: "notifikasi", label: "Notifikasi", note: "Dari lonceng di Ruangan, 2 belum dibaca" },
+      { token: "notifikasi-semua-dibaca", label: "Semua sudah dibaca", note: "Tanpa titik oranye" },
+      { token: "notifikasi-kosong", label: "Belum ada notifikasi", note: "Empty state" },
     ],
   },
   {
@@ -66,11 +77,20 @@ export const REVIEW_GROUPS: { title: string; links: { token: string; label: stri
       { token: "kenalan", label: "Grid tamu", note: "3/5 kartu" },
       { token: "kenalan-kosong", label: "Belum ada tamu", note: "Empty state" },
       { token: "kenalan-kartu", label: "Kartu pertanyaan", note: "Tanya → scan QR (kode Nanda: 1357)" },
+      { token: "kenalan-ajakan-terkirim", label: "Ajakan terkirim", note: "Kartu Raka setelah diajak; bisa ajak lagi setelah 10 menit" },
       { token: "kenalan-qr", label: "QR-ku", note: "QR + kode untuk discan tamu lain" },
       { token: "kenalan-hampir", label: "4/5 kartu", note: "Simpan 1 kartu lagi → popup hadiah" },
       { token: "kenalan-hadiah", label: "Hadiah menunggu", note: "Tukar nanti" },
       { token: "voucher", label: "Voucher", note: "PIN panitia: 2026" },
       { token: "kenalan-selesai", label: "Hadiah sudah diambil", note: "Status akhir" },
+    ],
+  },
+  {
+    title: "Galeri",
+    links: [
+      { token: "galeri", label: "Galeri", note: "Dari tombol Galeri di Ruangan; grid foto, filter Semua / Fotoku" },
+      { token: "galeri-foto", label: "Lihat foto tamu lain", note: "Geser, Unduh" },
+      { token: "galeri-foto-milikku", label: "Lihat fotoku", note: "Unduh + Hapus" },
     ],
   },
   {

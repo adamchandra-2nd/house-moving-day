@@ -542,8 +542,9 @@
 
 /* Announcements */
 .ann-fill { grid-template-columns: minmax(0, 1fr) 360px minmax(0, 1fr); }
-.ann-preview { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: var(--padding-mid-medium); }
-.ann-phone { height: 100%; max-height: 600px; aspect-ratio: 9 / 18; padding: var(--padding-small); border-radius: 40px; background: var(--ink); }
+.ann-preview { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--spacing-small); padding: var(--padding-mid-medium); }
+.ann-preview__note { display: flex; align-items: center; gap: var(--spacing-extra-small); margin: 0; text-align: center; }
+.ann-phone { flex: 1; min-height: 0; max-height: 600px; aspect-ratio: 9 / 18; padding: var(--padding-small); border-radius: 40px; background: var(--ink); }
 .ann-phone__screen { position: relative; height: 100%; border-radius: 32px; background-size: cover; background-position: center bottom; overflow: hidden; }
 .ann-phone__toast { position: absolute; top: var(--padding-mid-medium); left: var(--padding-small); right: var(--padding-small); z-index: 2; }
 .ann-phone__toast .toast { animation: none; padding: var(--padding-medium); }
@@ -556,7 +557,13 @@
 .ann-phone__nav { position: absolute; left: 50%; bottom: calc(32 / 844 * 100cqh); transform: translateX(-50%) scale(0.62); transform-origin: 50% 100%; pointer-events: none; }
 .ann-history { display: flex; flex-direction: column; gap: var(--spacing-small); margin: 0; padding: 0; list-style: none; }
 .ann-history__item { display: flex; flex-direction: column; gap: var(--spacing-extra-small); padding: var(--padding-medium) var(--padding-mid-medium); border-radius: var(--radius-medium); background: var(--background-primary); }
-.ann-history__head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-small); }
+.ann-history__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--spacing-small); }
+.ann-history__head > .t-p-h4-bold { min-width: 0; overflow-wrap: anywhere; padding-top: 4px; }
+.ann-history__tags { display: inline-flex; align-items: center; gap: var(--spacing-extra-small); flex: none; }
+.ann-history__delete { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: var(--radius-infinite); color: var(--text-grey-300); transition: background 120ms ease, color 120ms ease; }
+.ann-history__delete:hover, .ann-history__delete:focus-visible { background: rgba(214, 48, 49, 0.1); color: #c0392b; }
+.ann-search { max-width: none; flex: none; margin-bottom: var(--spacing-small); }
+.ann-search__clear { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-infinite); color: var(--text-grey-300); }
 .ann-meta { display: flex; flex-direction: column; margin: var(--spacing-extra-small) 0 0; border-top: 1px solid var(--border); }
 .ann-meta__row { display: grid; grid-template-columns: 16px auto minmax(0, 1fr); align-items: center; column-gap: var(--spacing-small); row-gap: var(--spacing-extra-small); padding: var(--padding-small) 0; border-bottom: 1px solid var(--border); }
 .ann-meta__row:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -566,17 +573,25 @@
 .ann-meta__extra .stat__bar { flex: 1; }
 .ann-read { display: flex; flex-direction: column; gap: var(--spacing-extra-small); }
 .ann-history__item .btn { align-self: flex-start; }
-.ann-confirm { align-items: flex-start; }
+.ann-confirm { align-items: flex-start; padding: var(--padding-mid-medium) var(--padding-large); }
+.ann-confirm .admin-cell-name__text { gap: 10px; }
+/* The admin reads the whole message before sending or deleting: wrap up to 3 lines */
+.ann-confirm .admin-cell-name__text > * { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+.ann-confirm .admin-cell-name__text > :last-child { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
 
 /* Rewards + Akses hero (ink panel, codes as digit boxes) */
 .rewards-fill { grid-template-columns: minmax(0, 1fr) 380px; }
 .akses-hero { background: var(--ink); color: var(--text-inverse); border-color: var(--ink); }
 .akses-hero .admin-panel__head { border-bottom-color: rgba(255, 255, 255, 0.12); }
 .akses-hero__note { color: var(--text-inverse); opacity: 0.7; }
-.akses-hero__actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--spacing-extra-small); }
-.akses-hero__actions .btn { width: 100%; min-width: 0; padding-left: var(--padding-small); padding-right: var(--padding-small); }
-/* The show/hide label is the longest, give it a bit more room */
-.akses-hero__actions:has(> :nth-child(3)) { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); }
+/* Show/hide + copy as icons; the main action (Ganti) takes the rest of the row */
+.akses-hero__actions { display: flex; align-items: center; gap: var(--spacing-extra-small); }
+.akses-hero__actions .btn { flex: 1; min-width: 0; }
+.icon-action { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: var(--radius-infinite); background: var(--white); color: var(--text-primary); transition: transform 120ms ease; }
+.icon-action:active { transform: scale(0.94); }
+/* Hover label */
+.icon-action::before { content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 0; padding: 4px 10px; border-radius: var(--radius-small, 8px); background: var(--white); color: var(--text-primary); font: 600 12px/1.4 var(--font-body, inherit); white-space: nowrap; border: 1px solid var(--border); opacity: 0; pointer-events: none; transition: opacity 120ms ease; z-index: 5; }
+.icon-action:hover::before, .icon-action:focus-visible::before { opacity: 1; }
 .akses-code { display: flex; flex-direction: column; gap: var(--spacing-small); padding-bottom: var(--padding-mid-medium); border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
 .akses-code:last-of-type { border-bottom: 0; }
 .akses-code__label { display: flex; flex-direction: column; gap: 0; }

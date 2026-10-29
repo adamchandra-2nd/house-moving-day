@@ -4,14 +4,17 @@ import { Avatar } from "../components/Avatar";
 import { BottomNav, type NavTab } from "../components/BottomNav";
 import { Button } from "../components/Button";
 import { Character } from "../components/Character";
+import { Icon } from "../components/Icon";
 import { RoomHeader, type RewardState } from "../components/RoomHeader";
 import { RoomIndicator } from "../components/RoomIndicator";
 import { OfflineBanner } from "../components/SystemState";
 import { Toast, ToastIcon } from "../components/Toast";
 import { KENALAN_TARGET } from "../config";
-import { announcementKey, announcementSub, type GuestAnnouncement } from "../data/adapters";
+import { announcementKey, announcementSub, type GuestAnnouncement, type KenalanInvite } from "../data/adapters";
 import { currentItem, formatTime, nextItem } from "../data/agenda";
 import { BEFORE_EVENT } from "../data/clock";
+import { firstName } from "../data/gallery";
+import type { GuestNotice } from "../data/notifications";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import "./MainArea.css";
 
@@ -35,13 +38,25 @@ const MOVE_COUNTDOWN_S = 5;
  * Which notification story to play when the main area opens (first visit or a review link).
  * "intro" is the review version of arriving, with sample arrivals; "masuk" is a
  * real guest arriving, which only gets the heads-up about the session on now.
+ * "foto-baru", "pengumuman" and "diajak-kenalan" are review stand-ins for what
+ * the live polls deliver through `announcement` / `kenalanInvite`.
  */
-export type MainScenario = "intro" | "masuk" | "ramai" | "segera" | "berubah" | "hadiah" | "setelah-feedback" | "none";
+export type MainScenario =
+  | "intro"
+  | "masuk"
+  | "ramai"
+  | "segera"
+  | "berubah"
+  | "hadiah"
+  | "setelah-feedback"
+  | "foto-baru"
+  | "pengumuman"
+  | "diajak-kenalan"
+  | "none";
 
 type ToastSpec = { key: string; lead: ReactNode; title: string; sub: string; action?: ReactNode; actions?: ReactNode };
 
 type MainAreaProps = {
-  name: string;
   kenalanCount: number;
   reward: RewardState;
   roomIndex: number;
@@ -61,11 +76,23 @@ type MainAreaProps = {
   /** A committee announcement not yet shown to this guest. */
   announcement?: GuestAnnouncement;
   onAnnouncementShown?: (id: string) => void;
+  /** Another guest's "Ajak kenalan" that just arrived: shown as a toast with "Lihat kartu". */
+  kenalanInvite?: KenalanInvite;
+  /** It has popped up: coming back to Ruangan must not show it again. */
+  onKenalanInviteShown?: () => void;
+  /** Open a guest's Kenalan card (e.g. from "Lihat kartu" on an invite). */
+  onOpenGuest: (guestId: string) => void;
+  /** Unseen photos in Galeri: orange dot on the Galeri button. */
+  newPhotos: boolean;
+  onGallery: () => void;
+  unread: number;
+  onNotifications: () => void;
+  /** Log a notice in Notifikasi (story toasts worth reading again). */
+  onNotice: (n: Omit<GuestNotice, "read">) => void;
 };
 
 /** Main area: the character stands in the middle of a Potara room; every action floats on top. */
 export function MainArea({
-  name,
   kenalanCount,
   reward,
   roomIndex,
@@ -81,6 +108,14 @@ export function MainArea({
   feedbackSent,
   announcement,
   onAnnouncementShown,
+  kenalanInvite,
+  onKenalanInviteShown,
+  onOpenGuest,
+  newPhotos,
+  onGallery,
+  unread,
+  onNotifications,
+  onNotice,
 }: MainAreaProps) {
   const [toast, setToast] = useState<ToastSpec | null>(null);
   const [toastClosing, setToastClosing] = useState(false);
@@ -121,6 +156,14 @@ export function MainArea({
     clearToastTimers();
     setToastClosing(false);
     setMoveLeft(MOVE_COUNTDOWN_S);
+    onNotice({
+      id: `n-mulai-${event}@${now}`,
+      kind: "jadwal",
+      title: `${event} dimulai di ${ROOMS[target].name}`,
+      body: "Kamu dipindahkan ke sana saat acara mulai.",
+      at: now,
+      target: { to: "ruangan", roomId: ROOMS[target].id },
+    });
     setToast({
       key: "move",
       lead: <ToastIcon icon="MapPin" tone="accent" />,
@@ -142,13 +185,71 @@ export function MainArea({
     }
   };
 
+  // Announcements from the committee or the MC: the event notices' toast, plus
+  // "Ke sana" when it points to a room. Keyed by id and time, so a resend
+  // (same id, new time) plays again.
+  const announce = (a: GuestAnnouncement) => {
+    const roomId = a.roomId;
+    const go = () => {
+      if (roomId) goTo(roomIndexById(roomId));
+      closeToast();
+    };
+    showToast(
+      {
+        key: `ann-${announcementKey(a)}`,
+        lead: <ToastIcon icon="Megaphone" tone="accent" />,
+        title: a.title,
+        sub: announcementSub(a),
+        action: roomId ? (
+          <Button size="small" style="secondary" icon="MapPin" onClick={go}>
+            Ke sana
+          </Button>
+        ) : undefined,
+      },
+      8000,
+    );
+  };
+
+  // Another guest would like to meet. No location: the room they are looking
+  // at in the app may not be where they really are.
+  const invited = (inv: Pick<KenalanInvite, "id" | "fromId" | "fromName">) => {
+    const name = firstName(inv.fromName);
+    showToast(
+      {
+        key: `invite-${inv.id}`,
+        lead: <Avatar initial={name.charAt(0)} />,
+        title: `${name} ngajak kenalan!`,
+        sub: `Cari ${name}, lalu kalian bisa saling tanya.`,
+        action: (
+          <Button
+            size="small"
+            style="secondary"
+            icon="UserPlus"
+            onClick={() => {
+              closeToast();
+              onOpenGuest(inv.fromId);
+            }}
+          >
+            Lihat kartu
+          </Button>
+        ),
+      },
+      8000,
+    );
+  };
+
   const greet = <Button size="small" style="secondary" onClick={() => onTab("kenalan")}>Sapa</Button>;
 
   // Notification stories. Each runs once; the parent then sets the scenario back to "none".
   useEffect(() => {
     if (scenario === "none") return;
     onScenarioPlayed();
-    const at = (ms: number, fn: () => void) => window.setTimeout(fn, ms);
+    // `notice` also lands in Notifikasi when the toast shows.
+    const at = (ms: number, fn: () => void, notice?: Omit<GuestNotice, "read">) =>
+      window.setTimeout(() => {
+        fn();
+        if (notice) onNotice(notice);
+      }, ms);
     const timers: number[] = [];
     if (scenario === "intro") {
       timers.push(
@@ -176,6 +277,57 @@ export function MainArea({
       );
       // Then the usual heads-up before moving to the event that's on now.
       if (live && liveRoom !== roomIndex) timers.push(at(3800, () => startMoveNotice(live.title, liveRoom)));
+    }
+    if (scenario === "foto-baru") {
+      timers.push(
+        at(
+          1200,
+          () =>
+            showToast(
+              {
+                key: "photos",
+                lead: <Avatar initial="N" />,
+                title: "Nanda membagikan 2 foto",
+                sub: "Lihat dan unduh di Galeri.",
+                action: <Button size="small" style="secondary" icon="Image" onClick={onGallery}>Lihat</Button>,
+              },
+              6000,
+            ),
+          { id: "n-foto-baru", kind: "galeri", title: "Nanda membagikan 2 foto", body: "Lihat dan unduh di Galeri.", at: now, target: { to: "galeri" } },
+        ),
+      );
+    }
+    if (scenario === "diajak-kenalan") {
+      timers.push(
+        at(1200, () => invited({ id: "demo", fromId: "raka", fromName: "Raka" }), {
+          id: "n-ajak-raka",
+          kind: "kenalan",
+          title: "Raka ngajak kenalan!",
+          body: "Cari Raka, lalu kalian bisa saling tanya.",
+          at: now,
+          target: { to: "kartu", guestId: "raka" },
+        }),
+      );
+    }
+    if (scenario === "pengumuman") {
+      const a: GuestAnnouncement = {
+        id: "makan",
+        title: "Makan siang siap",
+        body: "Silakan ke Ruang Omakase, prasmanan sudah dibuka.",
+        roomId: "ruang-omakase",
+        at: now,
+        source: "panitia",
+      };
+      timers.push(
+        at(1200, () => announce(a), {
+          id: "ann-makan",
+          kind: "pengumuman",
+          title: a.title,
+          body: a.body,
+          at: now,
+          target: { to: "ruangan", roomId: "ruang-omakase" },
+        }),
+      );
     }
     if (scenario === "ramai") {
       timers.push(
@@ -223,6 +375,14 @@ export function MainArea({
             },
             7000,
           ),
+          {
+            id: `n-segera-${upcoming.id}`,
+            kind: "jadwal",
+            title: `${upcoming.title} dimulai ${upcoming.start - now} menit lagi`,
+            body: `Di ${ROOMS[target].name}.`,
+            at: now,
+            target: { to: "agenda" },
+          },
         ),
       );
     }
@@ -239,6 +399,7 @@ export function MainArea({
             },
             7000,
           ),
+          { id: "n-berubah", kind: "jadwal", title: "Rundown berubah", body: "Pengenalan kantor diundur 15 menit.", at: now, target: { to: "agenda" } },
         ),
       );
     }
@@ -255,6 +416,7 @@ export function MainArea({
             },
             8000,
           ),
+          { id: "n-hadiah", kind: "hadiah", title: "Hadiahmu siap ditukar", body: "Tukar di meja panitia sebelum pulang.", at: now, target: { to: "voucher" } },
         ),
       );
     }
@@ -265,23 +427,21 @@ export function MainArea({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Announcements from the committee or the MC, as they arrive. Keyed by id
-  // and time, so a resend (same id, new time) plays again.
+  // Announcements as they arrive (see `announce`).
   const announcementSeen = announcement && announcementKey(announcement);
   useEffect(() => {
     if (!announcement) return;
-    showToast(
-      {
-        key: `ann-${announcementSeen}`,
-        lead: <ToastIcon icon="Megaphone" tone="accent" />,
-        title: announcement.title,
-        sub: announcementSub(announcement),
-      },
-      8000,
-    );
+    announce(announcement);
     onAnnouncementShown?.(announcement.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [announcementSeen]);
+
+  useEffect(() => {
+    if (!kenalanInvite) return;
+    invited(kenalanInvite);
+    onKenalanInviteShown?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kenalanInvite?.id]);
 
   const room = ROOMS[roomIndex];
   const atEdge = (dx: number) => (dx > 0 && roomIndex === 0) || (dx < 0 && roomIndex === ROOMS.length - 1);
@@ -327,6 +487,25 @@ export function MainArea({
     />
   ) : null;
 
+  // Notifikasi + Galeri: an Ink pill with the bottom nav's grey clay circles, top-left where a profile used to be.
+  const quick = (
+    <div className="main-area__quick clay clay-dark">
+      <button
+        type="button"
+        className="main-area__quick-btn clay clay-grey"
+        onClick={onNotifications}
+        aria-label={unread ? `Notifikasi, ${unread} belum dibaca` : "Notifikasi"}
+      >
+        <Icon name="Bell" size={22} />
+        {unread > 0 && <span className="main-area__badge t-p-h5-bold">{unread > 9 ? "9+" : unread}</span>}
+      </button>
+      <button type="button" className="main-area__quick-btn clay clay-grey" onClick={onGallery} aria-label={newPhotos ? "Galeri, ada foto baru" : "Galeri"}>
+        <Icon name="Image" size={22} />
+        {newPhotos && <span className="main-area__dot" />}
+      </button>
+    </div>
+  );
+
   return (
     <main
       className="main-area"
@@ -360,7 +539,13 @@ export function MainArea({
 
       {/* Layer 2: floating actions */}
       <div className="main-area__top">
-        <RoomHeader name={name} kenalanCount={kenalanCount} kenalanTarget={KENALAN_TARGET} reward={reward} onKenalan={() => onTab("kenalan")} />
+        <RoomHeader
+          start={quick}
+          kenalanCount={kenalanCount}
+          kenalanTarget={KENALAN_TARGET}
+          reward={reward}
+          onKenalan={() => onTab("kenalan")}
+        />
         {offline && <OfflineBanner />}
         {agenda}
         {/* Notifications grow out from under the agenda card, clear of the character */}

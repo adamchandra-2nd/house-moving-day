@@ -1,6 +1,7 @@
 import { DEMO_NOW } from "../config";
 import { AGENDA } from "../data/agenda";
 import { SAMPLE_COLLECTED } from "../data/guests";
+import { SAMPLE_NOTICES } from "../data/notifications";
 import type { GuestState } from "../guest/state";
 import { ADMIN_PAGES, FLOW, MC_TABS, PERF_TABS, SCENARIO_PARAM, STAGE, STAGE_PREFIX, tabPath, type StageSide } from "./paths";
 
@@ -19,6 +20,7 @@ const APP: Partial<GuestState> = {
   mainScenario: "none",
   hadirAt: 9 * 60,
   eventFeedback: { pembukaan: 4 },
+  notices: SAMPLE_NOTICES,
 };
 /** Right after the talkshow ends, guest still in Ruang Omakase. */
 const TALKSHOW_DONE = 10 * 60 + 31;
@@ -29,6 +31,8 @@ const ROOM = tabPath("ruangan");
 const AGENDA_TAB = tabPath("agenda");
 const KENALAN = tabPath("kenalan");
 const FEEDBACK = tabPath("feedback");
+const GALERI = tabPath("galeri");
+const NOTIFIKASI = tabPath("notifikasi");
 
 export const SCENARIOS: Record<string, Scenario> = {
   review: { path: "/review" },
@@ -58,6 +62,19 @@ export const SCENARIOS: Record<string, Scenario> = {
   "ruangan-hadiah": { path: ROOM, state: { ...APP, collected: FIVE, mainScenario: "hadiah", roomIndex: 4 } },
   "ruangan-selesai": { path: ROOM, state: { ...APP, now: DEMO_NOW.ended, eventFeedback: ALL_FEEDBACK } },
   "ruangan-offline": { path: ROOM, state: { ...APP, offline: true, roomIndex: 4 } },
+  "ruangan-foto-baru": { path: ROOM, state: { ...APP, mainScenario: "foto-baru", newPhotos: true, roomIndex: 1 } },
+  "ruangan-pengumuman": { path: ROOM, state: { ...APP, mainScenario: "pengumuman", roomIndex: 1 } },
+  "ruangan-diajak-kenalan": { path: ROOM, state: { ...APP, mainScenario: "diajak-kenalan", roomIndex: 2 } },
+
+  // ---------- Notifikasi ----------
+  notifikasi: { path: NOTIFIKASI, state: APP },
+  "notifikasi-semua-dibaca": { path: NOTIFIKASI, state: { ...APP, notices: SAMPLE_NOTICES.map((n) => ({ ...n, read: true })) } },
+  "notifikasi-kosong": { path: NOTIFIKASI, state: { ...APP, notices: [] } },
+
+  // ---------- Galeri (full screen from Ruangan) ----------
+  galeri: { path: GALERI, state: APP },
+  "galeri-foto": { path: GALERI, state: { ...APP, overlay: { type: "photo", id: "p1" } } },
+  "galeri-foto-milikku": { path: GALERI, state: { ...APP, overlay: { type: "photo", id: "p2" } } },
 
   // ---------- Agenda ----------
   agenda: { path: AGENDA_TAB, state: APP },
@@ -79,6 +96,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   kenalan: { path: KENALAN, state: APP },
   "kenalan-kosong": { path: KENALAN, state: { ...APP, collected: {}, guestsPresent: false } },
   "kenalan-kartu": { path: KENALAN, state: { ...APP, overlay: { type: "guest", id: "nanda" } } },
+  "kenalan-ajakan-terkirim": { path: KENALAN, state: { ...APP, invited: { raka: Date.now() - 2 * 60 * 1000 }, overlay: { type: "guest", id: "raka" } } },
   "kenalan-qr": { path: KENALAN, state: { ...APP, overlay: { type: "myqr" } } },
   "kenalan-hampir": { path: KENALAN, state: { ...APP, collected: FOUR } },
   "kenalan-hadiah": { path: KENALAN, state: { ...APP, collected: FIVE } },

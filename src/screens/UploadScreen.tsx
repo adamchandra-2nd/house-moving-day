@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { TextField } from "../components/TextField";
@@ -11,7 +10,6 @@ const STEP_MS = 700;
 
 type Props = {
   initial: PickResult;
-  roomName: string;
   /** Upload fails (no connection). */
   offline: boolean;
   onBack: () => void;
@@ -28,7 +26,7 @@ function skippedNotes(r: Omit<PickResult, "picks">): string[] {
 }
 
 /** Preview before sharing: up to GALLERY_MAX photos, an optional caption each, then one tap to share them all. */
-export function UploadScreen({ initial, roomName, offline, onBack, onShared }: Props) {
+export function UploadScreen({ initial, offline, onBack, onShared }: Props) {
   const [picks, setPicks] = useState(initial.picks);
   const [active, setActive] = useState(0);
   const [notes, setNotes] = useState(() => skippedNotes(initial));
@@ -134,10 +132,6 @@ export function UploadScreen({ initial, roomName, offline, onBack, onShared }: P
               maxLength={CAPTION_MAX}
               hint={`${current.caption.length}/${CAPTION_MAX} karakter`}
             />
-            <span className="upload__where">
-              <span className="t-p-h5 upload__where-label">Ditandai di</span>
-              <Badge type="room">{roomName}</Badge>
-            </span>
           </section>
         )}
 

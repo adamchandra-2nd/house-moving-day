@@ -13,7 +13,8 @@
 }
 .toast__main {
   display: flex;
-  align-items: center;
+  /* Icon stays level with the title, however long the text gets */
+  align-items: flex-start;
   gap: var(--spacing-small);
 }
 .toast__actions {

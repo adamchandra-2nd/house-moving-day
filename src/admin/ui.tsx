@@ -231,3 +231,33 @@ export function LiveTimer({ end, now, start, endsAt, variant = "hero" }: { end: 
     </div>
   );
 }
+
+/** Round icon-only action (show/hide, copy) with a short hover tip; `label` is the full name screen readers hear. */
+export function IconAction({ icon, label, tip, onClick }: { icon: IconName; label: string; tip: string; onClick: () => void }) {
+  return (
+    <button type="button" className="icon-action clay clay-light" onClick={onClick} aria-label={label} data-tip={tip}>
+      <Icon name={icon} size={20} />
+    </button>
+  );
+}
+
+/** Copy button that turns into a check for a moment after copying. */
+export function CopyAction({ label = "Salin", onCopy }: { label?: string; onCopy: () => void }) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const t = window.setTimeout(() => setDone(false), 1600);
+    return () => clearTimeout(t);
+  }, [done]);
+  return (
+    <IconAction
+      icon={done ? "Check" : "Copy"}
+      label={done ? "Tersalin" : label}
+      tip={done ? "Tersalin" : "Salin"}
+      onClick={() => {
+        onCopy();
+        setDone(true);
+      }}
+    />
+  );
+}
