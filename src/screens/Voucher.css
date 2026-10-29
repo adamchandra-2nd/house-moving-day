@@ -1,0 +1,31 @@
+.voucher {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-small);
+  padding: var(--padding-extra-large);
+  border-radius: var(--radius-extra);
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+  text-align: center;
+}
+.voucher--claimed { background: var(--surface); color: var(--text-primary); border: 1px solid var(--border); }
+.voucher__gift {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-infinite);
+  background: var(--ink);
+  color: var(--text-inverse);
+}
+.voucher__who { display: flex; align-items: center; gap: var(--spacing-extra-small); }
+.voucher__code {
+  margin-top: var(--spacing-extra-small);
+  padding: var(--padding-medium) var(--padding-large);
+  border-radius: var(--radius-infinite);
+  border: 2px dashed currentColor;
+  letter-spacing: 0.08em;
+}
+.voucher__note { text-align: center; }

@@ -1,0 +1,15 @@
+.room-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-small);
+  height: 44px;
+  /* Room tag hugs the left edge; dots keep the regular inset on the right */
+  padding: 0 var(--padding-mid-medium) 0 var(--padding-small);
+  border-radius: var(--radius-infinite);
+}
+/* Room + LIVE tags sit closer together (8px) than the tags-to-dots gap (12px) */
+.room-indicator__tags {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+}

@@ -1,0 +1,65 @@
+.room-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.room-header__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  border-radius: var(--radius-infinite);
+}
+.room-header__profile {
+  padding: var(--padding-small) var(--padding-large) var(--padding-small) var(--padding-small);
+}
+/* Orange so the Kenalan feature always stands out from the other floating chips */
+.room-header__kenalan {
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+  padding: var(--padding-medium) var(--padding-mid-medium) var(--padding-medium) var(--padding-medium);
+}
+.room-header__kenalan-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-infinite);
+  background: var(--white);
+  color: var(--orange-splash);
+}
+.room-header__kenalan-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-small);
+  width: 96px;
+}
+.room-header__kenalan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.room-header__kenalan-label { opacity: 0.85; }
+/* Progress toward the 5-kenalan reward */
+.room-header__bar {
+  height: 4px;
+  border-radius: var(--radius-infinite);
+  background: rgba(255, 255, 255, 0.3);
+  overflow: hidden;
+}
+.room-header__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--white);
+  transition: width 300ms ease;
+}
+/* Reward ready: the gift gently pulses until it's claimed */
+.room-header__kenalan-icon.is-pulsing { animation: gift-pulse 1.4s ease-in-out infinite; }
+@keyframes gift-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room-header__kenalan-icon.is-pulsing { animation: none; }
+}

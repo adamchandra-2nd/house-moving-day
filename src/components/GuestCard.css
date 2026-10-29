@@ -1,0 +1,40 @@
+.guest-card { padding: var(--padding-small); gap: var(--spacing-small); }
+.guest-card__art {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: var(--padding-small) 0 0;
+  border-radius: var(--radius-small);
+  background: radial-gradient(circle at 50% 75%, var(--white), var(--background-primary) 70%);
+  overflow: hidden;
+}
+.guest-card__art img { height: 92%; width: auto; }
+.guest-card__outfit {
+  position: absolute;
+  left: var(--padding-small);
+  bottom: var(--padding-small);
+  padding: 2px var(--padding-small);
+  border-radius: var(--radius-infinite);
+  background: rgba(255, 252, 247, 0.9);
+  border: 1px dashed var(--text-grey-600);
+  color: var(--text-grey-300);
+}
+.guest-card__status {
+  position: absolute;
+  top: var(--padding-small);
+  right: var(--padding-small);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-infinite);
+  background: var(--surface);
+  color: var(--text-grey-300);
+}
+.guest-card__status.is-done { background: var(--success); color: var(--text-on-accent); }
+.guest-card__info { display: flex; flex-direction: column; gap: var(--spacing-extra-small); padding: 0 var(--padding-small); }
+.guest-card__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guest-card__role { color: var(--text-grey-300); }

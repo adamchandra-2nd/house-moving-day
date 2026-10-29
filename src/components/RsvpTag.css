@@ -1,0 +1,17 @@
+.rsvp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  height: 28px;
+  padding: 0 var(--padding-mid-medium) 0 var(--padding-medium);
+  border-radius: var(--radius-infinite);
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.rsvp-tag__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.rsvp-tag--ya .rsvp-tag__dot { background: var(--success); }
+.rsvp-tag--belum .rsvp-tag__dot { background: var(--amber); }
+.rsvp-tag--tidak { color: var(--text-grey-300); }
+.rsvp-tag--tidak .rsvp-tag__dot { background: var(--text-grey-500); }

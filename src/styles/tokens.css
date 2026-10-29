@@ -1,0 +1,85 @@
+/* Design tokens — mirror of the variables in Figma file "Adam".
+   Keep names in sync with Figma so design and code speak the same language. */
+:root {
+  /* Brand Color */
+  --ink: #101010;
+  --orange-splash: #f95b00;
+  --amber: #ffa101;
+  --cream: #fcf2e3;
+  --white: #ffffff;
+
+  /* Text Color */
+  --text-primary: var(--ink);
+  --text-inverse: var(--cream);
+  --text-on-accent: var(--white);
+  --text-grey-100: #333230;
+  --text-grey-200: #524f4b;
+  --text-grey-300: #6e6a64;
+  --text-grey-400: #86817a;
+  --text-grey-500: #9e988f;
+  --text-grey-600: #b5aea4;
+
+  /* Background Color */
+  --background-primary: var(--cream);
+  --surface: #fffcf7;
+  --background-texture: rgba(16, 16, 16, 0.06);
+
+  /* Component / Supportive */
+  --border: rgba(16, 16, 16, 0.1);
+  --success: #4e8a3e;
+  /* Brighter success green for small marks on Ink surfaces (e.g. the "Sekarang" dot) */
+  --success-on-dark: #5fd35a;
+  --error: #d93b2b;
+
+  /* Message status (Tanya pembicara) — deliberately outside the warm palette, like chat apps */
+  --status-sent: #5b6676;
+  --status-sent-bg: #e9edf2;
+  --status-read: #2f6fdb;
+  --status-read-bg: #e2ecfd;
+  --status-answered: var(--success);
+  --status-answered-bg: #e5f1e1;
+
+  /* Soft tags (labels, never buttons): tinted fill, no border */
+  --tag-amber: #8a5600;
+  --tag-amber-bg: #fdeccc;
+  --tag-red: #b3261e;
+  --tag-red-bg: #fbe1dd;
+
+  /* Room colours (admin): background + strong ink for text/icons */
+  --room-halaman-depan: #4f7a3f;
+  --room-halaman-depan-bg: #e3efd9;
+  --room-ruang-kerja-utama: #2f6aa8;
+  --room-ruang-kerja-utama-bg: #dceafa;
+  --room-ruang-kerja-dalam: #6a4fb0;
+  --room-ruang-kerja-dalam-bg: #e9e2fa;
+  --room-ruang-meeting: #8a6a00;
+  --room-ruang-meeting-bg: #fbf0c9;
+  --room-ruang-omakase: #b8432c;
+  --room-ruang-omakase-bg: #fbe2da;
+
+  /* Radius */
+  --radius-small: 16px;
+  --radius-medium: 20px;
+  --radius-large: 24px;
+  --radius-extra: 32px;
+  --radius-infinite: 999px;
+
+  /* Spacing (gap) */
+  --spacing-extra-small: 8px;
+  --spacing-small: 12px;
+  --spacing-medium: 16px;
+  --spacing-large: 20px;
+  --spacing-extra-large: 24px;
+  --spacing-largest: 32px;
+
+  /* Padding */
+  --padding-small: 8px;
+  --padding-medium: 12px;
+  --padding-mid-medium: 16px;
+  --padding-large: 20px;
+  --padding-extra-large: 24px;
+
+  /* Typography */
+  --font-display: "Unbounded", system-ui, sans-serif;
+  --font-paragraph: "Space Mono", ui-monospace, monospace;
+}

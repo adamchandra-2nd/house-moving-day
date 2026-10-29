@@ -1,0 +1,115 @@
+/* Latin subset only: the app is Indonesian, so latin-ext, cyrillic and
+   vietnamese were ~130 kB of fonts no guest would ever render. */
+@import "@fontsource/unbounded/latin-500.css";
+@import "@fontsource/unbounded/latin-600.css";
+@import "@fontsource/space-mono/latin-400.css";
+@import "@fontsource/space-mono/latin-700.css";
+@import "./tokens.css";
+@import "./layout.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--background-primary);
+  color: var(--text-primary);
+  font-family: var(--font-paragraph);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* ---------- Text styles (Figma: Text/...) ---------- */
+.t-display-h6 { font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1.2; }
+.t-p-h3-bold { font-weight: 700; font-size: 16px; line-height: 1.2; }
+.t-p-h4-bold { font-weight: 700; font-size: 14px; line-height: 1.2; }
+.t-p-h4 { font-weight: 400; font-size: 14px; line-height: 1.2; }
+.t-p-h5-bold { font-weight: 700; font-size: 12px; line-height: 1.2; }
+.t-p-h5 { font-weight: 400; font-size: 12px; line-height: 1.2; }
+
+/* ---------- Clay effects (Figma: soft inner shadows + Noise) ----------
+   Top edge = soft highlight, bottom edge = soft shade, plus fine grain.
+   No drop shadows anywhere. */
+.clay {
+  position: relative;
+  isolation: isolate;
+}
+.clay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background-size: 140px 140px;
+}
+.clay > * {
+  position: relative;
+}
+
+.clay-accent {
+  box-shadow:
+    inset 0 4px 6px rgba(255, 255, 255, 0.38),
+    inset 0 -5px 9px rgba(64, 20, 0, 0.26);
+}
+.clay-accent::after,
+.clay-light::after {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.36  0 0 0 0 0.24  0 0 0 0 0.12  0 0 0 2.4 -1.15'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: 0.18;
+}
+.clay-light::after {
+  opacity: 0.1;
+}
+
+/* Ink surfaces: thin, soft light glow along the bottom edge */
+.clay-dark {
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.1),
+    inset 0 -2px 5px rgba(219, 219, 219, 0.34);
+}
+/* Grey 100 surfaces keep the dark bottom shade */
+.clay-grey {
+  box-shadow:
+    inset 0 4px 6px rgba(255, 255, 255, 0.16),
+    inset 0 -5px 9px rgba(0, 0, 0, 0.5);
+}
+.clay-dark::after,
+.clay-grey::after {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.92  0 0 0 0 0.9  0 0 0 0 0.86  0 0 0 2.4 -1.15'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: 0.14;
+}
+
+.clay-light {
+  box-shadow:
+    inset 0 4px 6px rgba(255, 255, 255, 0.9),
+    inset 0 -5px 9px rgba(92, 61, 31, 0.1);
+}
+
+/* Glass: floating elements over the room illustration */
+.glass {
+  background: rgba(255, 252, 247, 0.86);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--surface); }
+}

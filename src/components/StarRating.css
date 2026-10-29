@@ -1,0 +1,11 @@
+.star-rating { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-extra-small); }
+.star-rating__stars { display: flex; justify-content: center; gap: var(--spacing-extra-small); }
+.star-rating__star {
+  display: inline-flex;
+  padding: 2px;
+  color: var(--text-grey-600);
+  transition: transform 120ms ease, color 160ms ease;
+}
+.star-rating__star:active { transform: scale(0.9); }
+.star-rating__star.is-on { color: var(--amber); }
+.star-rating__label { color: var(--text-grey-300); }

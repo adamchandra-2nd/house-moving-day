@@ -1,0 +1,39 @@
+.kenalan__title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-small); }
+.kenalan-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+  padding: var(--padding-mid-medium);
+  border-radius: var(--radius-large);
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+}
+.kenalan-progress__head { display: flex; align-items: center; justify-content: space-between; }
+.kenalan-progress__slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--spacing-extra-small); }
+.kenalan-progress__slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: var(--radius-infinite);
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.8);
+}
+.kenalan-progress__slot.is-filled { border: 0; background: var(--white); }
+.kenalan-progress__hint { opacity: 0.9; line-height: 1.4; }
+.kenalan-progress__claimed { display: flex; align-items: center; gap: var(--spacing-extra-small); flex-wrap: wrap; }
+
+.guest-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-small);
+}
+.kenalan-empty { align-items: center; text-align: center; }
+.kenalan-empty__art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 220px;
+  padding-top: 64px;
+}
+.kenalan-empty__art .character { height: 100%; width: auto; aspect-ratio: 211 / 340; }

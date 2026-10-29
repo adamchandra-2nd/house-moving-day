@@ -1,0 +1,23 @@
+.countdown {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-extra-small);
+}
+.countdown__box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  padding: var(--padding-medium) 0;
+  border-radius: var(--radius-medium);
+  background: var(--ink);
+  color: var(--text-inverse);
+}
+.countdown__value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.countdown__label { opacity: 0.7; }

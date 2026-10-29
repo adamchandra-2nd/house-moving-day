@@ -1,0 +1,33 @@
+/* Full-screen step on top of the Kenalan list */
+.question {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--background-primary);
+}
+.question__guest { display: flex; align-items: center; gap: var(--spacing-small); }
+.question__who { display: flex; flex-direction: column; gap: var(--spacing-extra-small); flex: 1; min-width: 0; }
+.question__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+  padding: var(--padding-extra-large);
+  border-radius: var(--radius-large);
+  background: var(--ink);
+  color: var(--text-inverse);
+}
+.question__eyebrow { color: var(--amber); }
+.question__text { margin: 0; line-height: 1.35; text-wrap: balance; }
+.question__answer { margin: 0; line-height: 1.5; }
+.question__bottom > * { max-width: 398px; }
+.question__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-small);
+  margin: 0;
+  padding-left: var(--padding-large);
+  color: var(--text-grey-200);
+  line-height: 1.5;
+}
+.question__scanner { display: flex; justify-content: center; padding: var(--padding-large) 0; }
+.question__scan-copy { text-align: center; }

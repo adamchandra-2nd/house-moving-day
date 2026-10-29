@@ -1,0 +1,79 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  height: 28px;
+  padding: 0 var(--padding-mid-medium);
+  border-radius: var(--radius-infinite);
+  white-space: nowrap;
+}
+.badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.badge--live { background: var(--orange-splash); color: var(--text-on-accent); }
+.badge--hadir { background: var(--success); color: var(--text-on-accent); }
+.badge--pic { background: var(--amber); color: var(--text-on-accent); }
+.badge--plus-one { background: var(--amber); color: var(--text-on-accent); transform: rotate(6deg); }
+.badge--complete { background: var(--ink); color: var(--text-inverse); }
+.badge--complete .badge__dot { background: var(--amber); }
+/* Soft tags: tinted fill + a whisper of inset shade, no border — clearly labels, not buttons */
+.badge--next,
+.badge--ready { background: var(--tag-amber-bg); color: var(--tag-amber); }
+.badge--claimed { background: var(--status-answered-bg); color: var(--status-answered); }
+.badge--neutral { background: var(--status-sent-bg); color: var(--status-sent); }
+.badge--warn { background: var(--tag-amber-bg); color: var(--tag-amber); }
+.badge--danger { background: var(--tag-red-bg); color: var(--tag-red); }
+.badge--next,
+.badge--ready,
+.badge--claimed,
+.badge--neutral,
+.badge--warn,
+.badge--danger { box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.7), inset 0 -2px 4px rgba(16, 16, 16, 0.06); }
+.badge:has(> svg:first-child) { padding-left: var(--padding-small); }
+.badge--done { background: var(--background-texture); color: var(--text-grey-300); }
+
+/* Now: ink tag for what is happening right now. Room: white tag with an orange pin. On Air: red tag for the room that is live right now. */
+.badge--live,
+.badge--now,
+.badge--room,
+.badge--on-air { padding: 0 var(--padding-medium) 0 var(--padding-small); }
+.badge--room { background: var(--white); color: var(--text-primary); border: 1px solid var(--border); }
+.badge--room svg { color: var(--orange-splash); }
+.badge--now { background: var(--ink); color: var(--text-inverse); }
+.badge--now .badge__dot { background: var(--success-on-dark); }
+.badge--on-air { background: var(--error); color: var(--text-on-accent); }
+.badge--live .badge__dot,
+.badge--now .badge__dot,
+.badge--on-air .badge__dot { width: 8px; height: 8px; animation: badge-pulse 1.6s ease-in-out infinite; }
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .badge__dot { animation: none !important; }
+}
+
+/* Question status: Terkirim (slate) → Dibaca (blue) → Terjawab (green) */
+.badge--sent,
+.badge--read,
+.badge--answered { padding: 0 var(--padding-medium) 0 var(--padding-small); }
+/* Clay: white top highlight + a soft bottom shade tinted with each status colour */
+.badge--sent {
+  background: var(--status-sent-bg);
+  color: var(--status-sent);
+  box-shadow: inset 0 3px 4px rgba(255, 255, 255, 0.8), inset 0 -3px 6px rgba(91, 102, 118, 0.22);
+}
+.badge--read {
+  background: var(--status-read-bg);
+  color: var(--status-read);
+  box-shadow: inset 0 3px 4px rgba(255, 255, 255, 0.8), inset 0 -3px 6px rgba(47, 111, 219, 0.22);
+}
+.badge--answered {
+  background: var(--status-answered-bg);
+  color: var(--status-answered);
+  box-shadow: inset 0 3px 4px rgba(255, 255, 255, 0.8), inset 0 -3px 6px rgba(78, 138, 62, 0.24);
+}

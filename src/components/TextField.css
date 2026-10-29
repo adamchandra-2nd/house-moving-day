@@ -1,0 +1,31 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-small);
+  text-align: left;
+}
+.field__label { color: var(--text-grey-200); }
+.field__input {
+  width: 100%;
+  height: 56px;
+  padding: 0 var(--padding-mid-medium);
+  border-radius: var(--radius-medium);
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-primary);
+  font-family: var(--font-paragraph);
+  outline: none;
+  transition: border-color 160ms ease;
+}
+.field__input--multiline {
+  height: auto;
+  min-height: 96px;
+  padding: var(--padding-medium) var(--padding-mid-medium);
+  line-height: 1.5;
+  resize: none;
+}
+.field__input::placeholder { color: var(--text-grey-500); }
+.field__input:focus { border-color: var(--orange-splash); }
+.field__hint { color: var(--text-grey-300); line-height: 1.4; }
+.field__input.is-error { border-color: var(--error); }
+.field__hint--error { color: var(--error); }

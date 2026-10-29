@@ -1,0 +1,6 @@
+.checkin__stage { align-items: center; padding-top: 0; }
+.checkin__name {
+  padding: var(--padding-medium) var(--padding-extra-large);
+  border-radius: var(--radius-infinite);
+  background: var(--background-primary);
+}

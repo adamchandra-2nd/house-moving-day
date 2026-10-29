@@ -1,0 +1,201 @@
+/* ---------- Shared screen layouts ----------
+   Same 3-layer system as the main area:
+   1. full-bleed illustration, 2. character stage in the middle, 3. floating UI grouped top + bottom. */
+
+/* Flow screens (RSVP → check-in → customisation): top group, character stage, bottom group. */
+.flow {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+  width: 100%;
+  max-width: 430px;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  padding:
+    max(var(--padding-mid-medium), env(safe-area-inset-top)) var(--padding-mid-medium)
+    max(var(--padding-extra-large), env(safe-area-inset-bottom));
+  background: var(--background-primary);
+}
+.flow__bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center bottom;
+}
+.flow__top,
+.flow__bottom {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+}
+/* Character stands on the floor, right above the bottom group; shrinks on short screens. */
+.flow__stage {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* Headroom for the character's speech bubble */
+  padding-top: 72px;
+}
+.flow__stage .character {
+  height: min(340px, 100%);
+  width: auto;
+  aspect-ratio: 211 / 340;
+}
+
+/* Glass card that floats over the illustration */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+  padding: var(--padding-mid-medium);
+  border-radius: var(--radius-large);
+}
+.panel__title { margin: 0; text-wrap: balance; }
+.panel__body { margin: 0; color: var(--text-grey-200); line-height: 1.5; }
+.panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-small);
+  margin-top: var(--spacing-extra-small);
+}
+
+/* Top bar for sub-steps: round back button + title */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-small);
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-infinite);
+  background: var(--surface);
+  color: var(--text-primary);
+  transition: transform 120ms ease;
+}
+.icon-btn:active { transform: scale(0.94); }
+
+/* Tab pages (Agenda, Kenalan, Feedback): scrolling content + the same floating bottom nav. */
+.page {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+.page__scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-medium);
+  padding:
+    max(var(--padding-extra-large), env(safe-area-inset-top)) var(--padding-mid-medium)
+    calc(max(var(--padding-extra-large), env(safe-area-inset-bottom)) + 104px);
+}
+.page__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-small);
+  padding: var(--padding-small) 0;
+}
+.page__title { margin: 0; font-size: 28px; }
+.page__sub { margin: 0; color: var(--text-grey-300); line-height: 1.5; }
+.section-label {
+  margin: var(--spacing-extra-small) 0 0;
+  color: var(--text-grey-300);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+}
+/* Solid card on cream pages */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+  padding: var(--padding-mid-medium);
+  border-radius: var(--radius-large);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* Floating group at the bottom of tab pages: nav sits on a soft cream fade */
+.page__bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  padding: var(--padding-extra-large) var(--padding-mid-medium) max(var(--padding-extra-large), env(safe-area-inset-bottom));
+  background: linear-gradient(to bottom, rgba(252, 242, 227, 0), var(--background-primary) 45%);
+  pointer-events: none;
+}
+.page__bottom > * { pointer-events: auto; }
+.page__toast {
+  position: absolute;
+  top: max(var(--padding-mid-medium), env(safe-area-inset-top));
+  left: var(--padding-mid-medium);
+  right: var(--padding-mid-medium);
+  z-index: 4;
+}
+
+/* Screen-to-screen transition */
+.screen-enter { animation: screen-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .screen-enter { animation: none; }
+}
+
+/* Reward dialog icon */
+.reward-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-infinite);
+  background: var(--ink);
+  color: var(--text-inverse);
+}
+
+.topbar__title {
+  display: inline-flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 var(--padding-large);
+  border-radius: var(--radius-infinite);
+}
+
+/* Full-screen step that sits above any tab (main area included) */
+.overlay-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--background-primary);
+}

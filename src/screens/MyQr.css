@@ -1,0 +1,14 @@
+.my-qr { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-small); }
+.my-qr__code { display: flex; gap: var(--spacing-extra-small); }
+.my-qr__digit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 52px;
+  border-radius: var(--radius-small);
+  background: var(--background-primary);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+}

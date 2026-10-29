@@ -1,0 +1,25 @@
+.bottom-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-small);
+  padding: var(--padding-medium);
+  border-radius: var(--radius-infinite);
+  background: var(--ink);
+}
+.nav-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-small);
+  height: 48px;
+  min-width: 48px;
+  border-radius: var(--radius-infinite);
+  background: var(--text-grey-100);
+  color: var(--text-inverse);
+  transition: background 160ms ease;
+}
+.nav-item--active {
+  padding: 0 var(--padding-large) 0 var(--padding-mid-medium);
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+}

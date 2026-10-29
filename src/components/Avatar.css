@@ -1,0 +1,25 @@
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: var(--radius-infinite);
+  background: var(--amber);
+  color: var(--text-on-accent);
+  border: 2px solid var(--surface);
+  overflow: hidden;
+  font-weight: 700;
+}
+.avatar--S { width: 32px; height: 32px; font-size: 12px; }
+.avatar--M { width: 40px; height: 40px; font-size: 14px; }
+.avatar--L { width: 64px; height: 64px; font-family: var(--font-display); font-weight: 600; font-size: 32px; border-width: 3px; }
+.avatar--XL { width: 96px; height: 96px; font-family: var(--font-display); font-weight: 600; font-size: 40px; border-width: 3px; }
+/* Head crop of the guest's character */
+.avatar--character { background: var(--cream); }
+.avatar__face {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: 190% auto;
+  background-position: 50% 14%;
+}

@@ -1,0 +1,96 @@
+/* Day timeline: hour column + events column */
+.timeline {
+  position: relative;
+  margin-top: var(--spacing-extra-small);
+  --hour-col: 52px;
+}
+.timeline__hour {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  transform: translateY(-50%);
+}
+.timeline__label { width: var(--hour-col); flex: none; color: var(--text-grey-400); }
+.timeline__rule { flex: 1; height: 1px; background: rgba(16, 16, 16, 0.16); }
+/* Fainter half-hour line, starting at the events column */
+.timeline__half {
+  position: absolute;
+  left: calc(var(--hour-col) + var(--spacing-extra-small));
+  right: 0;
+  height: 0;
+  border-top: 1px dashed rgba(16, 16, 16, 0.1);
+}
+
+.timeline__event {
+  position: absolute;
+  left: calc(var(--hour-col) + var(--spacing-small));
+  /* Like Google Calendar, events leave a strip on the right so the hour lines stay visible */
+  right: var(--spacing-medium);
+  z-index: 1;
+  gap: var(--spacing-extra-small);
+  overflow: hidden;
+}
+.timeline__event .btn { align-self: flex-start; margin-top: auto; }
+.timeline__event.is-compact { padding: var(--padding-medium) var(--padding-mid-medium); }
+.agenda-card__tags { display: flex; flex-wrap: wrap; gap: var(--spacing-extra-small); }
+.agenda-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.agenda-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-extra-small) var(--spacing-small);
+  color: var(--text-grey-200);
+}
+.agenda-card__room { display: inline-flex; align-items: center; gap: var(--spacing-extra-small); color: var(--text-grey-200); }
+.agenda-card__room svg:first-child { color: var(--orange-splash); }
+.agenda-card__room.is-link { color: var(--text-primary); }
+.agenda-card__time { color: var(--text-grey-300); }
+/* What's on now gets the single orange accent on the page */
+.agenda-card--now { border: 2px solid var(--orange-splash); }
+.agenda-card--done { opacity: 0.55; }
+
+/* Current-time marker, like Google Calendar's red line (in Orange Splash here) */
+.timeline__now-line {
+  position: absolute;
+  left: var(--hour-col);
+  right: 0;
+  z-index: 0;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--orange-splash);
+}
+.timeline__now {
+  position: absolute;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.timeline__now-time {
+  width: var(--hour-col);
+  color: var(--orange-splash);
+  background: var(--background-primary);
+}
+.timeline__now-dot {
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: var(--radius-infinite);
+  background: var(--orange-splash);
+  border: 2px solid var(--background-primary);
+}
+
+.agenda-ended { align-items: flex-start; }
+.agenda-ended__link { color: var(--orange-splash); text-align: left; }

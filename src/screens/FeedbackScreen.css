@@ -1,0 +1,10 @@
+.moods { display: flex; flex-wrap: wrap; gap: var(--spacing-extra-small); }
+.mood {
+  height: 36px;
+  padding: 0 var(--padding-mid-medium);
+  border-radius: var(--radius-infinite);
+  background: var(--background-primary);
+  border: 1px solid var(--border);
+  transition: background 160ms ease, color 160ms ease;
+}
+.mood.is-on { background: var(--ink); color: var(--text-inverse); border-color: var(--ink); }

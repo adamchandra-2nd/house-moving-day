@@ -1,0 +1,81 @@
+/* Taller outfit panel: zoom the yard a little so the porch floor sits right under the character's feet */
+.customize .flow__bg {
+  background-size: auto 125%;
+  background-position: center bottom;
+}
+.customize__panel { padding-bottom: var(--padding-mid-medium); }
+.customize__tabs {
+  display: grid;
+  /* auto-fit, so adding a category (the scene also has hats and glasses
+     as separate slots) does not need a CSS change */
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--spacing-extra-small);
+}
+.customize__tab {
+  position: relative;
+  height: 40px;
+  border-radius: var(--radius-infinite);
+  background: var(--background-primary);
+  border: 1px solid var(--border);
+}
+.customize__tab.is-active { background: var(--ink); color: var(--text-inverse); border-color: var(--ink); }
+.customize__tab-dot {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-infinite);
+  background: var(--orange-splash);
+}
+/* One horizontal row of items; scrolls if the final list is longer */
+.customize__items {
+  display: flex;
+  gap: var(--spacing-extra-small);
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(var(--padding-mid-medium) * -1);
+  padding: 0 var(--padding-mid-medium);
+}
+.customize__items::-webkit-scrollbar { display: none; }
+.customize__item {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  width: 76px;
+  padding: var(--padding-small);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  border: 2px solid transparent;
+  transition: transform 120ms ease, border-color 160ms ease;
+}
+.customize__item:active { transform: scale(0.95); }
+.customize__item.is-selected { border-color: var(--orange-splash); }
+/* Placeholder thumbnail until Nanda's outfit art is in */
+.customize__thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius-small);
+  border: 1.5px dashed var(--text-grey-600);
+  color: var(--text-grey-400);
+}
+.customize__item-label { text-align: center; line-height: 1.2; }
+.customize__check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-infinite);
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+}

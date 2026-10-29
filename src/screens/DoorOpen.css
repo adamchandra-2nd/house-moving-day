@@ -1,0 +1,97 @@
+.door {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-extra-large);
+  width: 100%;
+  max-width: 430px;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--background-primary);
+  cursor: pointer;
+}
+.door__frame {
+  position: relative;
+  width: 240px;
+  height: 360px;
+  border-radius: 120px 120px var(--radius-small) var(--radius-small);
+  border: 12px solid var(--ink);
+  overflow: hidden;
+  background: var(--ink);
+}
+/* Warm office light behind the doors */
+.door__light {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 60%, var(--white), var(--amber) 70%, var(--orange-splash));
+}
+.door__panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background: var(--surface);
+  transition: transform 900ms cubic-bezier(0.65, 0, 0.35, 1);
+}
+.door__panel--left { left: 0; border-right: 1px solid var(--border); }
+.door__panel--right { right: 0; border-left: 1px solid var(--border); }
+.door--open .door__panel--left { transform: translateX(-100%); }
+.door--open .door__panel--right { transform: translateX(100%); }
+.door__reader {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 28px;
+  height: 44px;
+  margin-top: -22px;
+  border-radius: 8px;
+  background: var(--ink);
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+  transition: opacity 300ms ease;
+}
+.door--open .door__reader { opacity: 0; }
+.door__led {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-infinite);
+  background: var(--error);
+  transition: background 200ms ease;
+}
+.door--unlock .door__led,
+.door--open .door__led { background: var(--success-on-dark); }
+
+/* Keycard slides up to the reader, then away */
+.door__card {
+  position: absolute;
+  left: 50%;
+  bottom: -120px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  padding: var(--padding-mid-medium) var(--padding-large);
+  border-radius: var(--radius-small);
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+  transform: translateX(-50%) rotate(-8deg);
+  transition: bottom 600ms cubic-bezier(0.22, 1, 0.36, 1), transform 600ms ease, opacity 300ms ease;
+}
+.door--tap .door__card,
+.door--unlock .door__card {
+  bottom: calc(50% - 30px);
+  transform: translateX(10px) rotate(0deg);
+}
+.door--open .door__card { opacity: 0; }
+.door__caption { margin: 0; min-height: 1.2em; }
+.door__skip {
+  position: absolute;
+  bottom: max(var(--padding-extra-large), env(safe-area-inset-bottom));
+  color: var(--text-grey-300);
+}
+@media (prefers-reduced-motion: reduce) {
+  .door__panel, .door__card { transition: none; }
+}

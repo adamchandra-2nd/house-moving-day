@@ -1,0 +1,100 @@
+.character {
+  position: relative;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  width: 240px;
+  height: 340px;
+}
+/* Speech bubble above the head */
+.character__bubble {
+  position: absolute;
+  bottom: calc(100% + var(--spacing-extra-small));
+  left: 50%;
+  width: max-content;
+  max-width: 220px;
+  padding: var(--padding-medium) var(--padding-mid-medium);
+  border-radius: var(--radius-large);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  text-align: center;
+  white-space: normal;
+  transform-origin: 50% 100%;
+  animation: bubble-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.character__bubble::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: translateX(-50%) rotate(45deg);
+}
+.character__img {
+  position: relative;
+  height: 100%;
+  width: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* Breathing idle anchored at the feet, so the character stays planted on the floor */
+  transform-origin: 50% 100%;
+  animation: character-breathe 3.2s ease-in-out infinite;
+}
+/* Contact shadow right under the feet */
+.character__shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 170px;
+  height: 22px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(92, 52, 22, 0.32), rgba(92, 52, 22, 0.12) 60%, rgba(92, 52, 22, 0));
+}
+
+/* Tap reaction: squash, hop, settle — anchored at the feet */
+.character__img.is-bouncing {
+  animation: character-hop 520ms cubic-bezier(0.34, 1.56, 0.64, 1), character-breathe 3.2s ease-in-out 520ms infinite;
+}
+@keyframes character-hop {
+  0% { transform: scale(1, 1); }
+  20% { transform: scale(1.06, 0.92); }
+  50% { transform: translateY(-18px) scale(0.97, 1.04); }
+  80% { transform: scale(1.03, 0.97); }
+  100% { transform: scale(1, 1); }
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateX(-50%) scale(0.6); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+@keyframes character-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(0.99, 1.015); }
+}
+/* Where CharacterStage parks the shared Spline canvas. Deliberately empty in
+   React's eyes — the canvas is appended to it imperatively. */
+.character__slot {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+.character__slot.is-bouncing {
+  animation: character-hop 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No idle breathing, no bubble pop, no hop -- the bubble and the character
+     still show, they just arrive without movement. */
+  .character__bubble,
+  .character__img,
+  .character__img.is-bouncing,
+  .character__slot.is-bouncing {
+    animation: none;
+  }
+}

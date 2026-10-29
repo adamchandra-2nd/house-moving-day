@@ -1,0 +1,51 @@
+.narasi { cursor: pointer; user-select: none; }
+.narasi__bg { opacity: 0; transform: scale(1.04); transition: opacity 600ms ease, transform 6.5s linear; }
+/* Slow push-in on the active chapter keeps the picture alive while reading */
+.narasi__bg.is-active { opacity: 1; transform: scale(1.1); }
+.narasi__top {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-small);
+  min-height: 40px;
+}
+/* Stories-style segmented progress */
+.narasi__progress {
+  flex: 1;
+  display: flex;
+  gap: var(--spacing-extra-small);
+  padding: var(--padding-medium) var(--padding-mid-medium);
+  border-radius: var(--radius-infinite);
+  background: rgba(255, 252, 247, 0.86);
+}
+.narasi__seg {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-infinite);
+  background: var(--background-texture);
+  overflow: hidden;
+}
+.narasi__fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--orange-splash);
+}
+.narasi__fill.is-done { width: 100%; }
+.narasi__fill.is-playing { animation: story-fill linear forwards; }
+.narasi__skip {
+  height: 40px;
+  padding: 0 var(--padding-mid-medium);
+  border-radius: var(--radius-infinite);
+}
+.narasi__panel { animation: screen-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.narasi__hint { color: var(--text-grey-300); }
+
+@keyframes story-fill {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .narasi__bg, .narasi__bg.is-active { transform: none; transition: opacity 200ms ease; }
+  .narasi__fill.is-playing { animation: none; width: 100%; }
+}

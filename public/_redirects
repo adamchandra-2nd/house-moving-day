@@ -1,0 +1,3 @@
+# Real paths need an SPA fallback, or a cold load of /app/ruangan 404s.
+# Netlify reads this file; see the README for nginx / Vercel / Apache.
+/*  /index.html  200

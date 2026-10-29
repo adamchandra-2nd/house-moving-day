@@ -1,0 +1,58 @@
+.admin-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--padding-extra-large);
+  /* Potara's main workroom behind the card, with a light warm veil so the card stays the focus */
+  background:
+    linear-gradient(rgba(252, 242, 227, 0.35), rgba(252, 242, 227, 0.55)),
+    var(--login-bg) center / cover no-repeat,
+    var(--background-primary);
+}
+.admin-login__card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  width: min(960px, 100%);
+  min-height: 560px;
+  border-radius: var(--radius-extra);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(60, 36, 14, 0.22);
+}
+/* Character side: same yard as the guest app, so both sides feel like one family */
+.admin-login__art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 96px var(--padding-extra-large) var(--padding-extra-large);
+  background: radial-gradient(circle at 50% 75%, var(--white), var(--cream) 70%);
+}
+.admin-login__art .character { height: 360px; width: auto; aspect-ratio: 211 / 340; }
+.admin-login__form {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--spacing-medium);
+  padding: 48px;
+}
+.pin { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--spacing-extra-small); }
+.pin__box {
+  width: 100%;
+  min-width: 0;
+  height: 64px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--border);
+  background: var(--white);
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  outline: none;
+}
+.pin__box:focus { border-color: var(--orange-splash); }
+.pin__box.is-error { border-color: var(--error); }
+.admin-login__links { display: flex; justify-content: space-between; gap: var(--spacing-extra-small); }
+.admin-login__locked { flex-direction: row; align-items: center; color: var(--error); }
+.admin-login__art--icon { align-items: center; padding-top: var(--padding-extra-large); }

@@ -1,0 +1,10 @@
+.review { padding-bottom: max(var(--padding-extra-large), env(safe-area-inset-bottom)); }
+.review__group { display: flex; flex-direction: column; gap: var(--spacing-small); }
+.review__link {
+  flex-direction: row;
+  align-items: center;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.review__text { display: flex; flex-direction: column; gap: var(--spacing-extra-small); flex: 1; min-width: 0; }
+.review__note { color: var(--text-grey-300); }

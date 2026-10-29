@@ -1,0 +1,45 @@
+/* The one shared canvas, re-parented into whichever <Character> slot is on
+   screen. The slot provides the box; this just fills it. */
+.character-stage__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* The scene is transparent, so the room illustration behind stays visible. */
+  background: transparent;
+  touch-action: none;
+}
+
+/* Shown on /karakter only: there the guest is actively picking an outfit, so
+   they need to know the 3D character is still on its way. Everywhere else the
+   swap from sprite to 3D is silent. */
+.character-stage__progress {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  padding: var(--padding-small) var(--padding-medium);
+  border-radius: var(--radius-infinite);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-grey-200);
+  white-space: nowrap;
+}
+.character-stage__bar {
+  width: 56px;
+  height: 5px;
+  border-radius: var(--radius-infinite);
+  background: var(--background-texture);
+  overflow: hidden;
+}
+.character-stage__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-infinite);
+  background: var(--orange-splash);
+  transition: width 180ms linear;
+}

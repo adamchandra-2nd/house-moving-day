@@ -1,0 +1,11 @@
+.event-feedback__meta { color: var(--text-grey-300); }
+.event-feedback__form { gap: var(--spacing-medium); }
+.event-feedback__question { text-align: center; }
+.event-feedback__anon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-extra-small);
+  margin: 0;
+  color: var(--text-grey-200);
+}

@@ -1,0 +1,7 @@
+.qr {
+  display: block;
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  border-radius: var(--radius-medium);
+  shape-rendering: crispEdges;
+}

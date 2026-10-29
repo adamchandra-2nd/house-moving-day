@@ -1,0 +1,36 @@
+.memory-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small);
+  margin: 0;
+  padding: var(--padding-extra-large);
+  aspect-ratio: 9 / 14;
+  border-radius: var(--radius-extra);
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+  overflow: hidden;
+}
+.memory-card__head { display: flex; justify-content: space-between; opacity: 0.9; }
+.memory-card__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.1;
+}
+.memory-card__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: var(--radius-large);
+  background: radial-gradient(circle at 50% 70%, var(--amber), transparent 70%);
+}
+.memory-card__stage img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+.memory-card__foot { display: flex; flex-direction: column; gap: var(--spacing-extra-small); }
+.memory-card__name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+}
+.memory-card__stats { display: flex; flex-wrap: wrap; gap: var(--spacing-extra-small); opacity: 0.9; }
