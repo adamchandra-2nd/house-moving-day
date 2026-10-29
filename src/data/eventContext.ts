@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import { EVENT } from "../config";
+import type { Contact } from "./adapters";
 
 /**
  * The event as the committee has configured it.
@@ -20,6 +21,8 @@ export type EventInfo = {
   place: string;
   /** Countdown target. */
   startsAt: Date;
+  /** The committee member on call, behind every "Hubungi panitia". Both "" hides it. */
+  contact: Contact;
 };
 
 export const EventContext = createContext<EventInfo>(EVENT);

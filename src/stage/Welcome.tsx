@@ -5,20 +5,22 @@ import { EVENT } from "../config";
 import { formatTime } from "../data/agenda";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import { roomStyle } from "../admin/hooks";
-import { PANITIA_CONTACT, type Person, type Session } from "./data";
+import { panitiaContact, type Person, type Session } from "./data";
+import type { StageEvent } from "./live";
 import { ContactButton } from "./ui";
 
 /** Short intro for MC / speakers who don't know Potara yet. Skippable. */
-export function Welcome({ person, sessions, onDone }: { person: Person; sessions: Session[]; onDone: () => void }) {
+export function Welcome({ person, sessions, event = EVENT, onDone }: { person: Person; sessions: Session[]; /** The event as the server has it; the bundled config otherwise. */ event?: StageEvent; onDone: () => void }) {
   const [i, setI] = useState(0);
   const isMc = person.role === "mc";
+  const contact = panitiaContact();
   const slides = [
     {
       title: `Selamat datang, ${person.name.split(" ")[0]}!`,
       body: (
         <>
           <p className="t-p-h4 stage-login__body">
-            {EVENT.name} · {EVENT.dateLabel} · {EVENT.place}.{" "}
+            {event.name} · {event.dateLabel} · {event.place}.{" "}
             {isMc ? "Kamu memandu acara dari awal sampai akhir." : "Terima kasih sudah mau berbagi di rumah baru Potara."}
           </p>
           <ol className="welcome__list">
@@ -66,18 +68,23 @@ export function Welcome({ person, sessions, onDone }: { person: Person; sessions
               ? "Timer, naskah, dan pertanyaan tamu ada di app ini. Kamu juga bisa kirim kode ke performance (misalnya 5 menit lagi) tanpa harus memberi isyarat dari jauh."
               : "MC akan mengirim kode ke layarmu, misalnya 5 menit lagi atau waktunya tanya jawab. Pertanyaan tamu yang dipilih MC juga muncul di sini."}
           </p>
-          <dl className="info-rows">
-            <div className="info-row">
-              <Icon name="Users" size={16} />
-              <dt className="t-p-h5">Panitia</dt>
-              <dd className="t-p-h4-bold">{PANITIA_CONTACT.name}</dd>
-            </div>
-            <div className="info-row">
-              <Icon name="Message" size={16} />
-              <dt className="t-p-h5">WhatsApp</dt>
-              <dd className="t-p-h4-bold">{PANITIA_CONTACT.phone}</dd>
-            </div>
-          </dl>
+          {/* Nothing to list until the committee sets a contact; the button then says so. */}
+          {contact.phone && (
+            <dl className="info-rows">
+              {contact.name && (
+                <div className="info-row">
+                  <Icon name="Users" size={16} />
+                  <dt className="t-p-h5">Panitia</dt>
+                  <dd className="t-p-h4-bold">{contact.name}</dd>
+                </div>
+              )}
+              <div className="info-row">
+                <Icon name="Message" size={16} />
+                <dt className="t-p-h5">WhatsApp</dt>
+                <dd className="t-p-h4-bold">{contact.phone}</dd>
+              </div>
+            </dl>
+          )}
           <ContactButton block />
         </>
       ),

@@ -1,5 +1,6 @@
 import { API_URL, ApiError, request } from "../data/http";
-import type { StageState } from "./store";
+import type { Person } from "./data";
+import { EMPTY_STAGE, type StageState } from "./store";
 
 /**
  * The shared stage document, on the server.
@@ -40,6 +41,115 @@ export function loadStageToken(): string | null {
   return stageToken;
 }
 
+/**
+ * Who signed in on this device, kept next to the token.
+ *
+ * The token alone says nothing the screen can read, and the MC side has to
+ * know *which* MC is holding the phone -- the first MC in the cast is only
+ * right while there is exactly one.
+ */
+const ME_KEY = "hmd.stage.me";
+
+export function saveStageMe(p: Person | null) {
+  try {
+    if (p) localStorage.setItem(ME_KEY, JSON.stringify(p));
+    else localStorage.removeItem(ME_KEY);
+  } catch {
+    /* blocked storage: signed in for this tab only */
+  }
+}
+
+export function loadStageMe(): Person | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(ME_KEY) ?? "null");
+    return p?.id && p?.role ? (p as Person) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Fired when the server refuses the stage session, so the gate can ask for the code again. */
+export const STAGE_EXPIRED = "hmd:stage-expired";
+
+/**
+ * Forgets the session after a 401.
+ *
+ * Only for the stage's own token: the committee calls the same endpoints with
+ * its admin session, and its 401 is the admin's to handle.
+ */
+export function expireStageSession() {
+  setStageToken(null);
+  saveStageMe(null);
+  window.dispatchEvent(new Event(STAGE_EXPIRED));
+}
+
+/** A 401 on a request that went out with the stage's own session. */
+export function isStageExpiry(e: unknown, explicitToken?: string | null) {
+  return e instanceof ApiError && e.status === 401 && !explicitToken && Boolean(loadStageToken());
+}
+
+/** Fired when the committee revoked (or removed) whoever is signed in here. */
+export const STAGE_REVOKED = "hmd:stage-revoked";
+
+/**
+ * A 410: the committee took this person off the stage.
+ *
+ * Unlike a 401 this is not worth a new code -- the server would refuse the
+ * login too -- and unlike a network error it is not worth retrying. Only for
+ * the stage's own session, as with isStageExpiry.
+ */
+export function isStageRevoked(e: unknown, explicitToken?: string | null) {
+  return e instanceof ApiError && e.status === 410 && !explicitToken && Boolean(loadStageToken());
+}
+
+/** Forgets the session and whatever it painted, then lets the gate show the "dicabut" screen. */
+export function revokeStageSession() {
+  setStageToken(null);
+  saveStageMe(null);
+  clearCache();
+  window.dispatchEvent(new Event(STAGE_REVOKED));
+}
+
+/**
+ * What every stage request does with a refusal: 410 signs out for good, 401
+ * goes back to the code. The token check in both means only the first of a
+ * burst of failing requests acts; the rest find the session already gone.
+ */
+export function handleStageRefusal(e: unknown, explicitToken?: string | null) {
+  if (isStageRevoked(e, explicitToken)) revokeStageSession();
+  else if (isStageExpiry(e, explicitToken)) expireStageSession();
+}
+
+/**
+ * The person a personal link points at, before anyone has signed in.
+ *
+ * No credential: this is what the login screen greets with. The server masks
+ * the phone number itself, so the full number never reaches a browser that
+ * has only the link.
+ */
+export function fetchStagePerson(id: string) {
+  return request<Person>(`/api/stage/person/${encodeURIComponent(id)}`);
+}
+
+/** The `?p=` from the personal link, kept per side so a reload without it still knows who. */
+const linkKey = (side: string) => `hmd.stage.p.${side}`;
+
+export function saveStageLink(side: string, personId: string) {
+  try {
+    localStorage.setItem(linkKey(side), personId);
+  } catch {
+    /* see above */
+  }
+}
+
+export function loadStageLink(side: string): string | null {
+  try {
+    return localStorage.getItem(linkKey(side));
+  } catch {
+    return null;
+  }
+}
+
 type Envelope = { rev: number; state: StageState | null };
 
 /**
@@ -51,10 +161,26 @@ type Envelope = { rev: number; state: StageState | null };
  */
 let rev = 0;
 
+/**
+ * Fills in any field the stored document lacks.
+ *
+ * The server keeps the state opaque, so a document written by an older build
+ * -- or by hand -- can be missing fields this one reads, and one missing array
+ * was enough to take the whole MC screen down.
+ */
+function withDefaults(s: StageState | null): StageState | null {
+  return s ? { ...EMPTY_STAGE(), ...s } : null;
+}
+
 export async function pull(token: string | null): Promise<StageState | null> {
-  const env = await request<Envelope>("/api/stage/state", { token: token ?? loadStageToken() });
-  rev = env.rev;
-  return env.state;
+  try {
+    const env = await request<Envelope>("/api/stage/state", { token: token ?? loadStageToken() });
+    rev = env.rev;
+    return withDefaults(env.state);
+  } catch (e) {
+    handleStageRefusal(e, token);
+    throw e;
+  }
 }
 
 /**
@@ -73,6 +199,7 @@ export async function push(next: StageState, token: string | null, reapply?: (la
     rev = env.rev;
     return next;
   } catch (e) {
+    handleStageRefusal(e, token);
     if (!(e instanceof ApiError) || e.status !== 409 || !reapply) throw e;
     const latest = await pull(t);
     const merged = reapply(latest ?? next);
@@ -105,10 +232,16 @@ export function subscribe(token: string | null, onState: (s: StageState, r: numb
       // Ignore an echo of our own write, and anything older than what we hold.
       if (typeof msg.rev === "number" && msg.rev <= rev) return;
       if (typeof msg.rev === "number") rev = msg.rev;
-      onState(msg.state, rev);
+      onState(withDefaults(msg.state)!, rev);
     } catch {
       // A malformed frame is not worth tearing the stream down for.
     }
+  };
+  // The browser only gives up for good on a refused request (a 401 or 410
+  // among them) and cannot say which. One plain read tells; pull() signs the
+  // stage out -- or shows it was revoked -- if the session is what was refused.
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED && !token) void pull(null).catch(() => undefined);
   };
   return () => es.close();
 }
@@ -117,9 +250,18 @@ export function subscribe(token: string | null, onState: (s: StageState, r: numb
 export function readCache(): StageState | null {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-    return s?.phase ? (s as StageState) : null;
+    return s?.phase ? withDefaults(s as StageState) : null;
   } catch {
     return null;
+  }
+}
+
+/** Drops the local copy: a new sign-in must not paint whatever an earlier demo left behind. */
+export function clearCache() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* see above */
   }
 }
 
@@ -139,8 +281,27 @@ export function writeCache(s: StageState) {
  * code cannot be used to open the speaker's side.
  */
 export function stageLogin(code: string, personId: string) {
-  return request<{ token: string; person: { id: string; name: string; role: string } }>("/api/stage/login", {
+  return request<{ token: string; person: Person }>("/api/stage/login", {
     method: "POST",
     body: { code, personId },
   });
+}
+
+/** An announcement as the server stored it; guests' phones read the same row. */
+export type SentAnnouncement = { id: string; title: string; body: string; roomId: string | null; at: number; source: "mc" | "panitia" };
+
+/**
+ * The MC's announcement, sent to the guests.
+ *
+ * It used to live only in the stage document, which no guest's phone reads:
+ * the MC saw "terkirim" and the room saw nothing. MC only; the server checks
+ * the role.
+ */
+export async function sendAnnouncement(a: { title: string; body: string; roomId: string | null }) {
+  try {
+    return await request<SentAnnouncement>("/api/stage/announcements", { method: "POST", token: loadStageToken(), body: a });
+  } catch (e) {
+    handleStageRefusal(e);
+    throw e;
+  }
 }

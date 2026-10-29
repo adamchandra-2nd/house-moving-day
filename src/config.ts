@@ -6,6 +6,11 @@ export const EVENT = {
   place: "Kantor baru Potara",
   /** Countdown target. Start time is a placeholder until the rundown is final. */
   startsAt: new Date("2026-11-08T09:00:00+07:00"),
+  /**
+   * The committee member on call. Set on the Pengaturan page and sent with
+   * /api/event; empty here so nothing dials a placeholder number.
+   */
+  contact: { name: "", phone: "" },
 };
 
 /** Turn off for Test Day so "Ya" goes straight to "Mulai masuk Potara". */

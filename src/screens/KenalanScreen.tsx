@@ -6,7 +6,7 @@ import { GuestCard } from "../components/GuestCard";
 import { Icon } from "../components/Icon";
 import type { RewardState } from "../components/RoomHeader";
 import { KENALAN_TARGET } from "../config";
-import { GUESTS, type Guest } from "../data/guests";
+import type { Guest } from "../data/guests";
 import "./KenalanScreen.css";
 
 type Props = {
@@ -22,7 +22,9 @@ type Props = {
 export function KenalanScreen({ guests, collected, reward, onOpenGuest, onMyQr, onReward }: Props) {
   const ids = Object.keys(collected);
   const count = ids.length;
-  const slots = Array.from({ length: KENALAN_TARGET }, (_, i) => GUESTS.find((g) => g.id === ids[i]));
+  // Looked up in the guests who are here; a card from somebody who has since
+  // left still fills its slot, just without their initial.
+  const slots = Array.from({ length: KENALAN_TARGET }, (_, i) => ids[i] && { guest: guests.find((g) => g.id === ids[i]) });
 
   return (
     <div className="page__scroll screen-enter">
@@ -45,9 +47,9 @@ export function KenalanScreen({ guests, collected, reward, onOpenGuest, onMyQr, 
           <Icon name={reward === "claimed" ? "Check" : "Gift"} />
         </div>
         <div className="kenalan-progress__slots">
-          {slots.map((g, i) => (
-            <span key={i} className={`kenalan-progress__slot${g ? " is-filled" : ""}`}>
-              {g ? <Avatar initial={g.name.charAt(0)} size="S" /> : <span className="t-p-h5-bold">{i + 1}</span>}
+          {slots.map((slot, i) => (
+            <span key={i} className={`kenalan-progress__slot${slot ? " is-filled" : ""}`}>
+              {slot ? <Avatar initial={slot.guest?.name.charAt(0) ?? "✓"} size="S" /> : <span className="t-p-h5-bold">{i + 1}</span>}
             </span>
           ))}
         </div>

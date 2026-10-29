@@ -3,6 +3,8 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import type { IconName } from "../components/iconPaths";
 import { formatTime, statusAt } from "../data/agenda";
+import { rundownMinute } from "../data/clock";
+import type { StageState } from "../stage/store";
 import { SHOW_CHECKIN_TIME } from "../config";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import type { AdminPage } from "./AdminShell";
@@ -34,13 +36,20 @@ type Props = {
   onNavigate: (p: AdminPage) => void;
   onEndEvent: (id: string) => void;
   onStartEvent: (id: string) => void;
+  /**
+   * Live: the shared stage document. When it is there it decides what is on
+   * stage -- the MC's "mulai" and "selesai", or the committee's own from here
+   * -- instead of a guess from the clock, which is wrong the moment the
+   * rundown runs late. Review cases leave it out and keep the clock.
+   */
+  stage?: StageState | null;
 };
 
 const ago = (min: number) => (min < 1 ? "baru saja" : min < 60 ? `${min} menit lalu` : `${Math.floor(min / 60)} jam lalu`);
 const roomName = (id: string) => ROOMS[roomIndexById(id)].name;
 
 /** Overview: stat strip, then three equal-height columns that fill the screen. */
-export function Dashboard({ phase, daysLeft, now, guests, events, announcements, activity, onNavigate, onEndEvent, onStartEvent }: Props) {
+export function Dashboard({ phase, daysLeft, now, guests, events, announcements, activity, onNavigate, onEndEvent, onStartEvent, stage }: Props) {
   const yes = guests.filter((g) => g.rsvp === "ya").length;
   const no = guests.filter((g) => g.rsvp === "tidak").length;
   const pending = guests.filter((g) => g.rsvp === "belum").length;
@@ -50,8 +59,30 @@ export function Dashboard({ phase, daysLeft, now, guests, events, announcements,
   const claimed = guests.filter((g) => g.reward === "diambil").length;
   const status = statusAt(now);
   const sorted = [...events].sort((a, b) => a.start - b.start);
-  const live = phase === "live" ? sorted.find((e) => status[e.id] === "now") : undefined;
-  const next = phase === "pre" ? sorted[0] : phase === "live" ? sorted.find((e) => status[e.id] === "next") : undefined;
+  const clockLive = phase === "live" ? sorted.find((e) => status[e.id] === "now") : undefined;
+  const clockNext = phase === "pre" ? sorted[0] : phase === "live" ? sorted.find((e) => status[e.id] === "next") : undefined;
+  // From the stage: the session the MC started, and the first one not yet run.
+  const stageLive = stage ? sorted.find((e) => e.id === stage.liveId) : undefined;
+  const stageNext = stage ? sorted.find((e) => e.id !== stage.liveId && !stage.doneIds.includes(e.id)) : undefined;
+  const live = stage ? stageLive : clockLive;
+  const next = stage ? (phase === "ended" ? undefined : stageNext) : clockNext;
+  /** Rundown row state, from the stage when there is one. */
+  const rowStatus = (id: string) =>
+    stage
+      ? stage.doneIds.includes(id)
+        ? "done"
+        : id === stage.liveId
+          ? "now"
+          : phase !== "pre" && id === stageNext?.id
+            ? "next"
+            : "later"
+      : phase === "pre"
+        ? "later"
+        : phase === "ended"
+          ? "done"
+          : status[id];
+  // The timer counts from when it really started, not from the planned slot.
+  const startedMin = live && stage?.startedAt ? rundownMinute(new Date(stage.startedAt)) : undefined;
   const lastAnn = announcements[announcements.length - 1];
 
   return (
@@ -85,7 +116,7 @@ export function Dashboard({ phase, daysLeft, now, guests, events, announcements,
         >
           <ol className="dash-rundown">
             {sorted.map((e) => {
-              const s = phase === "pre" ? "later" : phase === "ended" ? "done" : status[e.id];
+              const s = rowStatus(e.id);
               return (
                 <li key={e.id} className={`dash-rundown__item is-${s}`} style={roomStyle(e.roomId)}>
                   <span className="t-p-h5-bold dash-rundown__time">{formatTime(e.start)}</span>
@@ -158,7 +189,11 @@ export function Dashboard({ phase, daysLeft, now, guests, events, announcements,
                 <span className="t-p-h4">
                   {roomName(live.roomId)} · PIC {live.pic ?? "–"}
                 </span>
-                <LiveTimer start={live.start} end={live.end} now={now} />
+                {startedMin !== undefined ? (
+                  <LiveTimer start={startedMin} end={startedMin + (live.end - live.start)} endsAt={stage!.startedAt + (live.end - live.start) * 60_000} now={now} />
+                ) : (
+                  <LiveTimer start={live.start} end={live.end} now={now} />
+                )}
                 <Button block size="small" style="secondary" icon="Check" onClick={() => onEndEvent(live.id)}>
                   Selesaikan acara
                 </Button>
@@ -186,7 +221,8 @@ export function Dashboard({ phase, daysLeft, now, guests, events, announcements,
                 <span className="t-p-h5">
                   {roomName(next.roomId)} · {formatTime(next.start)}–{formatTime(next.end)}
                 </span>
-                {phase === "live" && (
+                {/* As on the MC's screen: the next one starts once the one on stage has ended. */}
+                {phase === "live" && !(stage && live) && (
                   <Button block size="small" style="tertiary" icon="ArrowRight" onClick={() => onStartEvent(next.id)}>
                     Mulai sekarang
                   </Button>

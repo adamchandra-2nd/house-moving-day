@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Dialog } from "../components/Dialog";
 import { Icon } from "../components/Icon";
@@ -9,7 +9,7 @@ import "./CheckIn.css";
 
 const CODE_LENGTH = 4;
 
-/** What the (simulated) camera finds. "invalid" = not a Potara door QR. */
+/** What the review-case camera finds. "invalid" = not a Potara door QR. */
 export type CheckInScenario = "ok" | "invalid" | "denied" | "offline";
 
 /**
@@ -26,7 +26,34 @@ type Props = {
   scenario: CheckInScenario;
   onBack: () => void;
   onCheckedIn: (by: CheckInBy, code?: string) => Promise<void>;
+  /** Live: the real camera. Review cases keep the timed fake read. */
+  camera?: boolean;
+  /**
+   * The door code from ?door=, when the guest scanned the door QR with their
+   * phone's own camera app rather than this screen. Checked in straight away.
+   */
+  doorFromLink?: string;
 };
+
+/**
+ * Reads a door QR.
+ *
+ * The QR holds the app URL /check-in?door=<code> -- so the phone's own camera
+ * app also lands here -- and a bare code is accepted too. Anything else (a
+ * poster, somebody's kenalan QR) is not the door. The server decides whether
+ * the code is right; this only decides whether it is a door QR at all.
+ */
+function doorCodeFrom(text: string): string | null {
+  const t = text.trim();
+  if (/^\d{4,8}$/.test(t)) return t;
+  try {
+    const u = new URL(t);
+    const code = u.searchParams.get("door");
+    return u.pathname.endsWith("/check-in") && code && /^\d{4,8}$/.test(code) ? code : null;
+  } catch {
+    return null;
+  }
+}
 
 const PANEL: Record<ScanState, { title: string; body: string }> = {
   scanning: { title: "Scan QR di pintu Potara", body: "Arahkan kamera ke QR yang tertempel di pintu masuk." },
@@ -37,7 +64,7 @@ const PANEL: Record<ScanState, { title: string; body: string }> = {
 };
 
 /** Check-in at the physical door: scan the QR (primary), door code or committee lookup (fallbacks). */
-export function CheckIn({ name, scenario, onBack, onCheckedIn }: Props) {
+export function CheckIn({ name, scenario, onBack, onCheckedIn, camera = false, doorFromLink }: Props) {
   const initial: ScanState = scenario === "denied" ? "denied" : scenario === "offline" ? "offline" : "scanning";
   const [state, setState] = useState<ScanState>(initial);
   const [sheet, setSheet] = useState<"code" | "panitia" | null>(null);
@@ -51,9 +78,9 @@ export function CheckIn({ name, scenario, onBack, onCheckedIn }: Props) {
   /**
    * Scanning the QR.
    *
-   * The 900ms is the door opening, not a request -- the QR *is* the invite
-   * link, so the token already proves who this is and the server has nothing
-   * further to check.
+   * The 900ms is the door opening. The request carries the code read from the
+   * QR, and the server checks it like a typed door code -- being at the door
+   * is the thing a check-in proves, and the invite link alone does not.
    *
    * The failure path matters more than it looks. "found" hides every button
    * on this screen, on the assumption that the next screen is about to
@@ -63,16 +90,40 @@ export function CheckIn({ name, scenario, onBack, onCheckedIn }: Props) {
    * So a failure drops back to the error state, which still offers the door
    * code and the committee.
    */
+  const accept = useCallback(
+    (doorCode?: string) => {
+      setState("found");
+      window.setTimeout(() => {
+        void onCheckedIn("qr", doorCode).catch((e: unknown) => {
+          setState("invalid");
+          setFailure(e instanceof Error ? e.message : "Check-in gagal. Coba lagi.");
+        });
+      }, 900);
+    },
+    [onCheckedIn],
+  );
+
   const onRead = useCallback(() => {
     if (scenario === "invalid") return setState("invalid");
-    setState("found");
-    window.setTimeout(() => {
-      void onCheckedIn("qr").catch((e: unknown) => {
-        setState("invalid");
-        setFailure(e instanceof Error ? e.message : "Check-in gagal. Coba lagi.");
-      });
-    }, 900);
-  }, [scenario, onCheckedIn]);
+    accept();
+  }, [scenario, accept]);
+
+  const onDecode = useCallback(
+    (text: string) => {
+      const doorCode = doorCodeFrom(text);
+      if (!doorCode) return setState("invalid");
+      accept(doorCode);
+    },
+    [accept],
+  );
+
+  // Arrived from the door QR via the phone camera: no scanning left to do.
+  const linked = useRef(false);
+  useEffect(() => {
+    if (!doorFromLink || linked.current) return;
+    linked.current = true;
+    accept(doorFromLink);
+  }, [doorFromLink, accept]);
 
   const submit = async (by: CheckInBy, value: string) => {
     setSending(true);
@@ -102,7 +153,11 @@ export function CheckIn({ name, scenario, onBack, onCheckedIn }: Props) {
       </div>
 
       <div className="flow__stage checkin__stage">
-        <Scanner state={state} onRead={sheet ? undefined : onRead} />
+        {camera ? (
+          <Scanner state={state} onDecode={sheet ? undefined : onDecode} onCameraError={() => setState("denied")} />
+        ) : (
+          <Scanner state={state} onRead={sheet ? undefined : onRead} />
+        )}
       </div>
 
       <div className="flow__bottom">

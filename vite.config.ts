@@ -1,11 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
+    /**
+     * `--mode lan` serves HTTPS with a throwaway certificate, for testing on
+     * phones over wifi. Phones only open the camera on HTTPS (or localhost),
+     * so the door QR scan cannot be tried any other way. The phone warns
+     * about the certificate once; that is expected for a dev certificate.
+     */
+    ...(mode === 'lan' ? [basicSsl()] : []),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
@@ -82,5 +90,13 @@ export default defineConfig({
   assetsInclude: ['**/*.splinecode'],
   server: {
     host: true,
+    /**
+     * The API on the same origin. An HTTPS page cannot call an http:// API
+     * (mixed content), and a phone cannot reach "localhost:8081" anyway --
+     * so in lan mode VITE_API_URL is empty and /api goes through here.
+     */
+    proxy: {
+      '/api': { target: process.env.HMD_API ?? 'http://localhost:8081', changeOrigin: false },
+    },
   },
-})
+}))

@@ -120,14 +120,21 @@ export function Empty({ icon, tone, title, body }: { icon: IconName; tone: IconT
 }
 
 /** Live countdown for the session on stage (brief: the rundown shows a timer). Ticks from the rundown clock. */
-export function LiveTimer({ end, now, start, variant = "hero" }: { end: number; now: number; start: number; variant?: "hero" | "chip" }) {
-  const [t0] = useState(() => Date.now());
+/**
+ * `endsAt` (ms) is the exact end when it is known -- the stage records the
+ * real start to the millisecond -- and wins over the minute arithmetic.
+ */
+export function LiveTimer({ end, now, start, endsAt, variant = "hero" }: { end: number; now: number; start: number; endsAt?: number; variant?: "hero" | "chip" }) {
   const [tick, setTick] = useState(() => Date.now());
+  // Re-anchored whenever the minute moves: counting seconds from mount on top
+  // of a `now` that also advances took every minute off twice.
+  const [anchor, setAnchor] = useState(() => ({ now, at: Date.now() }));
+  if (anchor.now !== now) setAnchor({ now, at: Date.now() });
   useEffect(() => {
     const id = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
-  const secs = Math.round((end - now) * 60 - (tick - t0) / 1000);
+  const secs = endsAt !== undefined ? Math.round((endsAt - tick) / 1000) : Math.round((end - now) * 60 - Math.max(0, tick - anchor.at) / 1000);
   const a = Math.abs(secs);
   const text = `${secs < 0 ? "+" : ""}${String(Math.floor(a / 60)).padStart(2, "0")}:${String(a % 60).padStart(2, "0")}`;
   const tone = secs < 0 ? "over" : secs <= 300 ? "warn" : "ok";

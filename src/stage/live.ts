@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { request } from "../data/http";
-import { loadStageToken } from "./remote";
-import { PEOPLE, SESSIONS, setStagePeople, setStageSessions, type Person, type Session } from "./data";
+import { EVENT } from "../config";
+import { handleStageRefusal, loadStageToken } from "./remote";
+import { PANITIA_CONTACT, PEOPLE, SESSIONS, setStageContact, setStagePeople, setStageSessions, type Person, type Session, type StageContact } from "./data";
 
 /**
  * What the MC and speaker screens read from the server.
@@ -11,8 +12,10 @@ import { PEOPLE, SESSIONS, setStagePeople, setStageSessions, type Person, type S
  * wrong the moment the committee could edit any of it -- an MC reading a
  * rundown from the bundle is reading last week's plan, confidently.
  *
- * The bundled copies survive as the initial value, so a screen paints
- * immediately and a design review link still works with no server.
+ * The bundled copies survive as the initial value for the review cases
+ * (?demo=), so a design link still works with no server. A live screen
+ * starts empty instead: an MC reading the bundled rundown on a real event is
+ * reading somebody else's plan.
  */
 
 /** One question, as the API stores it. The stage maps this into its own shape. */
@@ -38,24 +41,28 @@ export type StageRoom = {
 export const EMPTY_ROOM: StageRoom = { here: 0, rsvpYes: 0, recent: [], rewards: [], feedback: {} };
 
 /**
- * Loads once, on mount, and leaves the bundled value in place if the request
- * fails.
+ * Loads on mount (and every `refreshMs`), and leaves the current value in
+ * place if a request fails.
  *
  * Deliberately not react-query: these screens are a separate lazy chunk with
  * no query client of their own, and one GET per screen does not need a cache
- * layer. `refreshMs` is for the room, which changes as guests arrive.
+ * layer. `enabled` holds the request back until the stage is signed in, so a
+ * login screen does not fire a round of 401s.
  */
-function useServerData<T>(path: string, initial: T, refreshMs?: number): T {
+function useServerData<T>(path: string, initial: T, refreshMs?: number, enabled = true): T {
   const [data, setData] = useState<T>(initial);
 
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     const load = () =>
       request<T>(path, { token: loadStageToken() })
         .then((d) => alive && setData(d))
-        .catch(() => {
-          // Not signed in yet, or offline. The bundled value stays, which is
-          // what this screen showed before any of this existed.
+        .catch((e: unknown) => {
+          // A refused session goes back to the code screen, a revoked one
+          // to the "dicabut" screen; offline keeps whatever this screen
+          // already shows.
+          if (alive) handleStageRefusal(e);
         });
 
     void load();
@@ -66,10 +73,13 @@ function useServerData<T>(path: string, initial: T, refreshMs?: number): T {
       alive = false;
       clearInterval(timer);
     };
-  }, [path, refreshMs]);
+  }, [path, refreshMs, enabled]);
 
   return data;
 }
+
+/** Live screens or a review case; see the note at the top. */
+type Mode = { demo: boolean; enabled?: boolean };
 
 /**
  * The rundown the committee edits, and the cast.
@@ -78,14 +88,16 @@ function useServerData<T>(path: string, initial: T, refreshMs?: number): T {
  * `sessionById` and `personById` are called from event handlers where a hook
  * cannot reach.
  */
-export function useStageSessions(): Session[] {
-  const list = useServerData<Session[]>("/api/stage/rundown", SESSIONS);
+export function useStageSessions({ demo, enabled = true }: Mode): Session[] {
+  // Re-read every half minute when live: the committee edits the rundown
+  // during the event, and the MC must not run last hour's plan.
+  const list = useServerData<Session[]>("/api/stage/rundown", demo ? SESSIONS : [], demo ? undefined : 30_000, enabled);
   setStageSessions(list);
   return list;
 }
 
-export function useStagePeople(): Person[] {
-  const list = useServerData<Person[]>("/api/stage/people", PEOPLE);
+export function useStagePeople({ demo, enabled = true }: Mode): Person[] {
+  const list = useServerData<Person[]>("/api/stage/people", demo ? PEOPLE : [], demo ? undefined : 30_000, enabled);
   setStagePeople(list);
   return list;
 }
@@ -101,3 +113,21 @@ export const useStageQuestions = () => useServerData<ApiQuestion[]>("/api/stage/
  * is up to thirty seconds old is no worse than one that is live.
  */
 export const useStageRoom = () => useServerData<StageRoom>("/api/stage/room", EMPTY_ROOM, 30_000);
+
+/** What the stage shows about the event itself: name, date, place, and who to call. */
+export type StageEvent = { name: string; host: string; dateLabel: string; place: string; contact?: StageContact };
+
+/**
+ * The event as the committee set it up, read from the open /api/event.
+ *
+ * Falls back to the bundled config, which is also what the review cases
+ * use: it is the same text the guest side starts from.
+ */
+export function useStageEvent(demo: boolean): StageEvent {
+  const data = useServerData<StageEvent>("/api/event", EVENT, undefined, !demo);
+  // The committee member on call, from Pengaturan. Empty until it is set (or
+  // loaded): a screen then says so rather than offering a bundled number.
+  const contact = demo ? PANITIA_CONTACT : { name: data.contact?.name ?? "", phone: data.contact?.phone ?? "" };
+  setStageContact(contact);
+  return { name: data.name || EVENT.name, host: data.host || EVENT.host, dateLabel: data.dateLabel || EVENT.dateLabel, place: data.place || EVENT.place, contact };
+}

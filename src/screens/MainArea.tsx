@@ -9,6 +9,7 @@ import { RoomIndicator } from "../components/RoomIndicator";
 import { OfflineBanner } from "../components/SystemState";
 import { Toast, ToastIcon } from "../components/Toast";
 import { KENALAN_TARGET } from "../config";
+import { announcementKey, announcementSub, type GuestAnnouncement } from "../data/adapters";
 import { currentItem, nextItem } from "../data/agenda";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import "./MainArea.css";
@@ -29,8 +30,12 @@ const nearby = (index: number) => ROOMS.map((_, i) => i).filter((i) => Math.abs(
 const TOAST_CLOSE_MS = 200;
 const MOVE_COUNTDOWN_S = 5;
 
-/** Which notification story to play when the main area opens (first visit or a review link). */
-export type MainScenario = "intro" | "ramai" | "segera" | "berubah" | "hadiah" | "setelah-feedback" | "none";
+/**
+ * Which notification story to play when the main area opens (first visit or a review link).
+ * "intro" is the review version of arriving, with sample arrivals; "masuk" is a
+ * real guest arriving, which only gets the heads-up about the session on now.
+ */
+export type MainScenario = "intro" | "masuk" | "ramai" | "segera" | "berubah" | "hadiah" | "setelah-feedback" | "none";
 
 type ToastSpec = { key: string; lead: ReactNode; title: string; sub: string; action?: ReactNode; actions?: ReactNode };
 
@@ -48,7 +53,13 @@ type MainAreaProps = {
   scenario: MainScenario;
   onScenarioPlayed: () => void;
   onOpenReward: () => void;
-  onAsk: () => void;
+  /** Absent when the session on now has no Q&A. */
+  onAsk?: () => void;
+  /** The final survey is in: the ended card offers the memory card instead. */
+  feedbackSent: boolean;
+  /** A committee announcement not yet shown to this guest. */
+  announcement?: GuestAnnouncement;
+  onAnnouncementShown?: (id: string) => void;
 };
 
 /** Main area: the character stands in the middle of a Potara room; every action floats on top. */
@@ -66,6 +77,9 @@ export function MainArea({
   onScenarioPlayed,
   onOpenReward,
   onAsk,
+  feedbackSent,
+  announcement,
+  onAnnouncementShown,
 }: MainAreaProps) {
   const [toast, setToast] = useState<ToastSpec | null>(null);
   const [toastClosing, setToastClosing] = useState(false);
@@ -146,6 +160,9 @@ export function MainArea({
         at(8000, () => showToast({ key: "hadir", lead: <Avatar initial="N" />, title: "Nanda baru saja hadir", sub: "Ayo sapa dan kenalan!", action: greet }, 5000)),
       );
       if (live && liveRoom !== roomIndex) timers.push(at(15000, () => startMoveNotice(live.title, liveRoom)));
+    }
+    if (scenario === "masuk" && live && liveRoom !== roomIndex) {
+      timers.push(at(1500, () => startMoveNotice(live.title, liveRoom)));
     }
     if (scenario === "setelah-feedback") {
       timers.push(
@@ -247,6 +264,24 @@ export function MainArea({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Announcements from the committee or the MC, as they arrive. Keyed by id
+  // and time, so a resend (same id, new time) plays again.
+  const announcementSeen = announcement && announcementKey(announcement);
+  useEffect(() => {
+    if (!announcement) return;
+    showToast(
+      {
+        key: `ann-${announcementSeen}`,
+        lead: <ToastIcon icon="Megaphone" tone="accent" />,
+        title: announcement.title,
+        sub: announcementSub(announcement),
+      },
+      8000,
+    );
+    onAnnouncementShown?.(announcement.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [announcementSeen]);
+
   const room = ROOMS[roomIndex];
   const atEdge = (dx: number) => (dx > 0 && roomIndex === 0) || (dx < 0 && roomIndex === ROOMS.length - 1);
 
@@ -266,7 +301,7 @@ export function MainArea({
   };
 
   const agenda = ended ? (
-    <AgendaMini type="ended" onFeedback={() => onTab("feedback")} />
+    <AgendaMini type="ended" feedbackSent={feedbackSent} onFeedback={() => onTab("feedback")} />
   ) : live ? (
     <AgendaMini
       type="now"

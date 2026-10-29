@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { adminApi, adminPhotoSrc, endSession, loadSession, type WireSettings, type AdminFeedback, EMPTY_FEEDBACK } from "./api";
+import {
+  adminApi,
+  adminPhotoSrc,
+  endSession,
+  loadSession,
+  loadSessionEmail,
+  patchStageAsAdmin,
+  pullStageAsAdmin,
+  resetStageAsAdmin,
+  useStageWatchAsAdmin,
+  type AdminPerson,
+  type WireSettings,
+  type AdminFeedback,
+  EMPTY_FEEDBACK,
+} from "./api";
 import { AdminGallery } from "./Gallery";
 import { firstName, type GalleryState } from "../data/gallery";
 import { useRundownMinute } from "../data/clock";
@@ -10,7 +24,7 @@ import { Dialog } from "../components/Dialog";
 import { Toast, ToastIcon } from "../components/Toast";
 import type { IconName } from "../components/iconPaths";
 import { DEMO_NOW, DOOR_CODE, EVENT, PANITIA_PIN } from "../config";
-import { formatTime } from "../data/agenda";
+import { formatTime, setAgenda } from "../data/agenda";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import { AdminShell, type AdminPage } from "./AdminShell";
 import { AdminOfflineBanner, AdminSystem } from "./AdminSystem";
@@ -40,12 +54,34 @@ import { Rundown } from "./Rundown";
 import { Settings, type AdminSettings } from "./Settings";
 import { Undangan } from "./Undangan";
 import { Pengisi, type Access } from "./Pengisi";
-import type { ScriptPart } from "../stage/data";
-import { patchStage, read as readStage, useStageWatch, type StageState } from "../stage/store";
+import type { Person, ScriptPart } from "../stage/data";
+import { EMPTY_STAGE, patchStage, read as readStage, useStageWatch, type StageState } from "../stage/store";
 import { HELP_LABEL, PEOPLE } from "../stage/data";
 
 const NOW: Record<Phase, number> = { pre: 8 * 60, live: DEMO_NOW.live, ended: DEMO_NOW.ended };
+/** Review cases' frozen "today". Live uses the real one. */
 const TODAY = new Date(2026, 9, 25);
+const NOOP = () => undefined;
+/** How often the live admin re-reads what other people change: MC sign-ins, MC announcements. */
+const REFRESH_MS = 20_000;
+
+/** Local midnight, so a day count does not depend on the hour it is asked at. */
+const dayOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+/**
+ * Where the live event stands, from the date in Pengaturan and the rundown.
+ *
+ * Before the day: "pre". On the day it is "live" until the last session has
+ * ended -- including the morning before the first one, which the dashboard
+ * shows as "Berikutnya" rather than a countdown of zero days. After: "ended".
+ */
+function livePhase(date: Date, events: AdminEvent[], now: number): { phase: Phase; daysLeft: number } {
+  const daysLeft = Math.round((dayOf(date) - dayOf(new Date())) / 86_400_000);
+  if (daysLeft > 0) return { phase: "pre", daysLeft };
+  if (daysLeft < 0) return { phase: "ended", daysLeft: 0 };
+  const lastEnd = events.length ? Math.max(...events.map((e) => e.end)) : Infinity;
+  return { phase: now >= lastEnd ? "ended" : "live", daysLeft: 0 };
+}
 
 const newGuest = (id: string, name: string, phone: string): AdminGuest => ({
   id,
@@ -152,7 +188,7 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
   const [signedIn, setSignedIn] = useState(live ? loadSession() !== null : sc.signedIn);
   const [page, setPage] = useState<AdminPage>(sc.page);
   const [system, setSystem] = useState(token in ADMIN_LINKS ? sc.system : "404");
-  const [phase] = useState<Phase>(sc.phase);
+  const [demoPhase] = useState<Phase>(sc.phase);
   /**
    * The real clock, ticking, when this is the live admin. A review link keeps
    * its frozen time, because the whole point of those is a screen that looks
@@ -178,9 +214,28 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
     countdown: true,
     finalFeedbackAt: 13 * 60 + 30,
     codesChangedAt: 7 * 60 + 45,
+    inviteTemplate: "",
+    contact: { name: "", phone: "" },
   });
-  const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
-  const [access, setAccess] = useState<Record<string, Access>>({ nadia: "masuk", ardi: "terkirim" });
+  /** One template for both: live it is a settings field, so it survives a reload and reaches the server's wa.me links. */
+  const template = settings.inviteTemplate || DEFAULT_TEMPLATE;
+  /**
+   * Live: the MC and speakers the committee added, starting from none. Their
+   * "Akses" comes with each row from the server; the map below is only the
+   * review cases' sample.
+   */
+  const [people, setPeople] = useState<AdminPerson[]>(live ? [] : PEOPLE);
+  const [demoAccess, setDemoAccess] = useState<Record<string, Access>>(live ? {} : { nadia: "masuk", ardi: "terkirim" });
+  const access: Record<string, Access> = live ? Object.fromEntries(people.map((p) => [p.id, p.access ?? "belum"])) : demoAccess;
+  /**
+   * Live: the shared stage document -- what the MC has actually started and
+   * ended. null until the first read; review cases never set it, so their
+   * dashboard keeps reading the frozen clock.
+   */
+  const [stage, setStage] = useState<StageState | null>(null);
+  /** Announcements sent from here that the server has not confirmed: a refresh must not drop them. */
+  const drafts = useRef(new Set<string>());
+  const { phase, daysLeft } = live ? livePhase(settings.date, events, now) : { phase: demoPhase, daysLeft: 14 };
   const [scripts, setScripts] = useState<Record<string, ScriptPart[]>>(() => readStage()?.scripts ?? {});
   /**
    * The bell starts empty on the live admin. Everything in it is raised by
@@ -214,17 +269,21 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
       try {
         // One trip for the whole admin: every page reads from this, and
         // fetching per page would make switching tabs feel like loading.
-        const [rows, rundown, announced, set] = await Promise.all([
+        const [rows, rundown, announced, set, crew] = await Promise.all([
           adminApi.guests(),
           adminApi.rundown(),
           adminApi.announcements(),
           adminApi.settings(),
+          adminApi.people(),
         ]);
         if (!alive) return;
-        setGuests(rows);
-        setEvents(rundown);
-        setAnnouncements(announced);
+        // `?? []`: an empty table may come back as null from the API, and
+        // every page here maps over these.
+        setGuests(rows ?? []);
+        setEvents(rundown ?? []);
+        setAnnouncements(mergeAnnouncements(announced ?? [], [], drafts.current));
         setSettings(fromWireSettings(set));
+        setPeople(crew ?? []);
       } catch (e) {
         if (!alive) return;
         // A session that has expired -- they last 12 hours -- is not a
@@ -246,6 +305,51 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
     };
   }, [live, signedIn]);
 
+  /**
+   * What other people change, re-read every REFRESH_MS: the MC signing in
+   * ("Sudah masuk" on Pengisi), announcing from the stage, and guests
+   * checking themselves in at the door. The stage document has its own
+   * stream; these tables do not.
+   */
+  useEffect(() => {
+    if (!live || !signedIn) return;
+    let alive = true;
+    void pullStageAsAdmin()
+      .then((s) => alive && setStage(s ?? EMPTY_STAGE()))
+      .catch(() => {
+        // The stream fills it in; until then the dashboard says nothing is on.
+      });
+    const t = window.setInterval(() => {
+      if (document.hidden) return;
+      // On its own: a failure here should not hold back the lists below.
+      void adminApi
+        .feedback()
+        .then((f) => alive && setFeedback(f))
+        .catch(() => undefined);
+      void Promise.all([adminApi.people(), adminApi.announcements(), adminApi.guests()])
+        .then(([crew, announced, rows]) => {
+          if (!alive) return;
+          setPeople(crew ?? []);
+          // Rows just added here and not yet confirmed carry a placeholder
+          // id (see onAdd); they stay until the server's answer replaces them.
+          setGuests((gs) => [...gs.filter((g) => g.id.startsWith("baru-")), ...(rows ?? [])]);
+          setAnnouncements((list) => mergeAnnouncements(announced ?? [], list, drafts.current));
+        })
+        .catch((e: unknown) => {
+          if (!alive) return;
+          if (e instanceof ApiError && e.status === 401) {
+            endSession();
+            setSignedIn(false);
+          }
+          // Anything else: the next tick tries again, and the screen keeps what it had.
+        });
+    }, REFRESH_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, [live, signedIn]);
+
   const notify = (icon: IconName, title: string, sub: string, action?: { label: string; page: AdminPage }) => {
     setToast({ icon, title, sub, action });
     window.setTimeout(() => setToast((t) => (t?.title === title ? null : t)), action ? 6000 : 3500);
@@ -260,45 +364,40 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
   const seenStage = useRef({ help: readStage()?.speakerSignal?.at ?? 0, call: readStage()?.panitiaCall?.at ?? 0 });
   const pushRef = useRef(pushNotice);
   pushRef.current = pushNotice;
+  /** Read inside the stream callback, which is created once. */
+  const crewRef = useRef({ people, events });
+  crewRef.current = { people, events };
   const onStage = useCallback((st: StageState) => {
+    setStage(st);
     const sig = st.speakerSignal;
     if (sig?.kind === "bantuan" && sig.at > seenStage.current.help) {
       seenStage.current.help = sig.at;
-      const sp = PEOPLE.find((p) => p.role === "pembicara");
-      pushRef.current({ kind: "action", icon: "Bell", tone: "red", title: `${sp?.name.split(" ")[0]} butuh bantuan`, body: `${HELP_LABEL[sig.help ?? "lainnya"]} · Ruang Omakase. Kirim tim ke panggung.`, page: "pengisi" });
+      // The speaker of the session on stage, not the first one on the list:
+      // the signal itself does not say who sent it.
+      const { people: crew, events: rundown } = crewRef.current;
+      const session = rundown.find((e) => e.id === st.liveId);
+      const sp = crew.find((p) => p.id === session?.speakerId) ?? crew.find((p) => p.role === "pembicara");
+      const room = session ? ROOMS[roomIndexById(session.roomId)]?.name : undefined;
+      pushRef.current({ kind: "action", icon: "Bell", tone: "red", title: `${sp?.name.split(" ")[0] ?? "Pembicara"} butuh bantuan`, body: `${HELP_LABEL[sig.help ?? "lainnya"]}${room ? ` · ${room}` : ""}. Kirim tim ke panggung.`, page: "pengisi" });
     }
     if (st.panitiaCall && st.panitiaCall.at > seenStage.current.call) {
       seenStage.current.call = st.panitiaCall.at;
       pushRef.current({ kind: "action", icon: "Megaphone", tone: "red", title: "MC memanggil panitia", body: `${st.panitiaCall.reason}. Hampiri MC di panggung.`, page: "pengisi" });
     }
   }, []);
-  useStageWatch(onStage);
+  // Live listens with the committee's session; the stage store's own watch
+  // would send the MC's token, which this laptop does not hold.
+  useStageWatch(live ? NOOP : onStage);
+  useStageWatchAsAdmin(onStage, live && signedIn);
 
-  if (system)
-    return (
-      <AdminSystem
-        kind={system}
-        onAction={() => {
-          setSystem(undefined);
-          setPage("dashboard");
-        }}
-      />
-    );
-  if (!signedIn)
-    return (
-      <Login
-        scenario={sc.login ?? "email"}
-        onSignedIn={async (email, pin) => {
-          // A review case has no server behind it, so it signs in locally.
-          if (live) await adminApi.verifyPin(email, pin);
-          setSignedIn(true);
-        }}
-      />
-    );
-
-  const present = guests.filter((g) => g.checkIn !== null && g.hadir).length;
-  const patchGuest = (id: string, patch: Partial<AdminGuest>) => setGuests((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)));
-  const name = (id: string) => guests.find((g) => g.id === id)?.name ?? "";
+  /**
+   * The guest-side helpers (statusAt and friends, used by Dashboard, Rundown
+   * and Feedback) read one shared agenda. Live, that is this rundown -- not
+   * the bundled one -- including the committee's unsaved-to-guests edits.
+   */
+  useEffect(() => {
+    if (live) setAgenda(events);
+  }, [live, events]);
 
   /**
    * Feedback is loaded when its page opens, not with everything else.
@@ -320,21 +419,26 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
   useEffect(() => {
     if (!live || !signedIn || page !== "galeri") return;
     let alive = true;
-    void adminApi
-      .photos()
-      .then((rows) => {
-        if (!alive) return;
-        setGallery({
-          photos: rows.map((p) => ({ ...p, src: adminPhotoSrc(p.id), mine: false })),
-          checked: rows.filter((p) => p.checked).map((p) => p.id),
+    const load = () =>
+      void adminApi
+        .photos()
+        .then((rows) => {
+          if (!alive) return;
+          setGallery({
+            photos: (rows ?? []).map((p) => ({ ...p, src: adminPhotoSrc(p.id), mine: false })),
+            checked: (rows ?? []).filter((p) => p.checked).map((p) => p.id),
+          });
+        })
+        .catch(() => {
+          // The page's own empty state reads correctly, and the next tick
+          // tries again. Not worth taking over their screen.
         });
-      })
-      .catch(() => {
-        // The page's own empty state reads correctly, and the committee can
-        // reopen it. Not worth taking over their screen.
-      });
+    load();
+    // Guests keep uploading during the event; the committee moderates as they come.
+    const t = window.setInterval(() => !document.hidden && load(), REFRESH_MS);
     return () => {
       alive = false;
+      window.clearInterval(t);
     };
   }, [live, signedIn, page]);
 
@@ -356,6 +460,34 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
       alive = false;
     };
   }, [live, signedIn, page]);
+
+  if (system)
+    return (
+      <AdminSystem
+        kind={system}
+        onAction={() => {
+          setSystem(undefined);
+          setPage("dashboard");
+        }}
+      />
+    );
+  if (!signedIn)
+    return (
+      <Login
+        scenario={sc.login ?? "email"}
+        onRequestPin={live ? (email) => adminApi.requestPin(email).then(() => undefined) : undefined}
+        onSignedIn={async (email, pin) => {
+          // A review case has no server behind it, so it signs in locally.
+          if (live) await adminApi.verifyPin(email, pin);
+          setSignedIn(true);
+        }}
+      />
+    );
+
+  const present = guests.filter((g) => g.checkIn !== null && g.hadir).length;
+  const patchGuest = (id: string, patch: Partial<AdminGuest>) => setGuests((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)));
+  const name = (id: string) => guests.find((g) => g.id === id)?.name ?? "";
+
 
   /**
    * Settings save as one row, from both the Pengaturan page and the PIN
@@ -399,6 +531,57 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
     });
   };
 
+  /**
+   * MC and speakers: saved on the server first, then shown. Not optimistic,
+   * because the id the server mints is what their personal link carries --
+   * a row without it has no link to send.
+   */
+  const savePerson = async (p: Person | Omit<Person, "id">) => {
+    const saved = "id" in p ? await adminApi.savePerson(p) : await adminApi.addPerson(p);
+    setPeople((list) => (list.some((x) => x.id === saved.id) ? list.map((x) => (x.id === saved.id ? saved : x)) : [...list, saved]));
+    notify("Check", "id" in p ? "Data pengisi disimpan" : `${saved.name} ditambahkan`, "Kirim link pribadinya dari daftar ini.");
+  };
+  const deletePerson = async (id: string) => {
+    const gone = people.find((p) => p.id === id);
+    await adminApi.deletePerson(id);
+    setPeople((list) => list.filter((p) => p.id !== id));
+    // The server unassigns their sessions; the rundown here follows.
+    setEvents((es) => es.map((e) => (e.speakerId === id ? { ...e, speakerId: undefined } : e)));
+    notify("Trash", `${gone?.name ?? "Pengisi"} dihapus`, "Linknya sudah tidak berlaku.");
+  };
+
+  /**
+   * A committee write to the shared stage document, shown at once. On a
+   * refusal the screen goes back to whatever the server holds, rather than
+   * keeping a session "on stage" that the MC's screen never saw.
+   */
+  const stageAction = (fn: (s: StageState) => StageState, failTitle: string) => {
+    setStage((s) => fn(s ?? EMPTY_STAGE()));
+    void patchStageAsAdmin(fn).catch((e: unknown) => {
+      notify("Close", failTitle, e instanceof Error ? e.message : "Coba lagi.");
+      void pullStageAsAdmin()
+        .then((s) => setStage(s ?? EMPTY_STAGE()))
+        .catch(() => undefined);
+    });
+  };
+
+  /**
+   * A change to someone's personal link: shown at once, then the list is
+   * re-read, because "access" is the server's to derive -- an invite to
+   * someone already signed in stays "Sudah masuk".
+   */
+  const personAction = (id: string, optimistic: Access, call: () => Promise<unknown>) => {
+    setPeople((list) => list.map((p) => (p.id === id && (optimistic === "dicabut" || p.access !== "masuk") ? { ...p, access: optimistic } : p)));
+    void call()
+      .catch((e: unknown) => notify("Close", "Gagal menyimpan akses", e instanceof Error ? e.message : "Coba lagi."))
+      .finally(() => {
+        void adminApi
+          .people()
+          .then((rows) => setPeople(rows ?? []))
+          .catch(() => undefined);
+      });
+  };
+
   const goTo = (p: AdminPage) => {
     setPage(p);
     if (p !== "tamu") setSelected(null);
@@ -416,7 +599,7 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
         if (q && page !== "tamu") setPage("tamu");
       }}
       counts={{ hadiah: guests.filter((g) => g.reward === "siap").length, undangan: guests.filter((g) => g.rsvp === "belum" && g.invite === "gagal").length }}
-      email={ADMIN_EMAIL}
+      email={live ? (loadSessionEmail() ?? "") : ADMIN_EMAIL}
       onLogout={() => {
         endSession();
         setSignedIn(false);
@@ -438,23 +621,46 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
     >
       {page === "dashboard" && (
         <Dashboard
-          phase={phase}
-          daysLeft={14}
+          // The stage outranks the calendar: a session the MC started is on
+          // whatever the date says (a rehearsal, a rundown running late).
+          phase={live && stage && stage.phase !== "pre" ? stage.phase : phase}
+          daysLeft={daysLeft}
           now={now}
           guests={guests}
           events={events}
           announcements={announcements}
           activity={activityOf(guests, events, live ? feedback.events : {}, now)}
+          stage={live ? stage : undefined}
           onNavigate={goTo}
           onEndEvent={(id) => {
             const ev = events.find((e) => e.id === id)!;
-            setEvents((es) => es.map((e) => (e.id === id ? { ...e, end: now } : e)));
             notify("Check", `${ev.title} diselesaikan`, `Form feedback dikirim ke ${present} tamu.`);
+            if (!live) return setEvents((es) => es.map((e) => (e.id === id ? { ...e, end: now } : e)));
+            // The MC's own "selesai" (stage/McApp endSession), field for field,
+            // so the MC's screen, the speaker's and the guests' move with it.
+            stageAction((s) => {
+              if (s.liveId !== id) return s; // already ended, by the MC or another laptop
+              const last = !events.some((e) => e.id !== id && !s.doneIds.includes(e.id));
+              return {
+                ...s,
+                liveId: null,
+                doneIds: [...s.doneIds, id],
+                phase: last ? "ended" : s.phase,
+                speaker: ev.speakerId ? "selesai" : s.speaker,
+                mcSignal: ev.speakerId ? { kind: "terima-kasih", at: Date.now() } : s.mcSignal,
+              };
+            }, "Gagal menyelesaikan sesi");
           }}
           onStartEvent={(id) => {
             const ev = events.find((e) => e.id === id)!;
-            setEvents((es) => es.map((e) => (e.id === id ? { ...e, start: now, end: now + (e.end - e.start) } : e)));
             notify("ArrowRight", `${ev.title} dimulai`, `Tamu dapat notifikasi pindah ke ${ROOMS[roomIndexById(ev.roomId)].name}.`);
+            if (!live) return setEvents((es) => es.map((e) => (e.id === id ? { ...e, start: now, end: now + (e.end - e.start) } : e)));
+            // The MC's "mulai" (stage/McApp startSession). The rundown keeps its
+            // planned times; the real start is the stage's startedAt.
+            stageAction(
+              (s) => ({ ...s, phase: "live", liveId: id, startedAt: Date.now(), speaker: ev.speakerId ? "live" : s.speaker, mcSignal: null }),
+              "Gagal memulai sesi",
+            );
           }}
         />
       )}
@@ -493,8 +699,9 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
           }}
           onSendInvites={live ? (ids) => adminApi.sendInvites(ids) : undefined}
           onTemplate={(t) => {
-            setTemplate(t);
-            notify("Message", "Pesan undangan disimpan", "Dipakai untuk undangan berikutnya.");
+            // Saved with the settings row. The default is stored as "", so a
+            // later change to the server's built-in text still reaches it.
+            saveSettings({ ...settings, inviteTemplate: t === DEFAULT_TEMPLATE ? "" : t }, "Pesan undangan disimpan", "Dipakai untuk undangan berikutnya.");
           }}
           onDone={(sent, failed) => {
             if (failed.length)
@@ -513,6 +720,9 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
       )}
       {page === "pengisi" && (
         <Pengisi
+          people={people}
+          events={events}
+          live={live}
           access={access}
           scripts={scripts}
           initialEdit={sc.editScript}
@@ -524,20 +734,42 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
             // Goes to the shared stage document, which is what the MC's
             // screen reads. A failure has to be said out loud: the committee
             // would otherwise walk away believing the MC has the new script.
-            void patchStage((s) => ({ ...s, scripts: next })).catch((e: unknown) => {
+            // Only this session's entry is written onto the latest document,
+            // so a script someone else saved meanwhile is not rolled back.
+            const apply = (s: StageState) => {
+              const merged = { ...(s.scripts ?? {}) };
+              if (parts) merged[sid] = parts;
+              else delete merged[sid];
+              return { ...s, scripts: merged };
+            };
+            void (live ? patchStageAsAdmin(apply) : patchStage(apply)).catch((e: unknown) => {
               setScripts(scripts);
               notify("Close", "Naskah gagal disimpan", e instanceof Error ? e.message : "Coba lagi.");
             });
             notify("Pencil", parts ? "Naskah disimpan" : "Kembali ke saran Claude", "Langsung tampil di layar MC.");
           }}
           onSend={(id) => {
-            setAccess((a) => ({ ...a, [id]: "terkirim" }));
-            notify("Send", "Link terkirim lewat WhatsApp", "Statusnya jadi Sudah masuk begitu kodenya dipakai.");
+            notify("Send", live ? "WhatsApp dibuka" : "Link terkirim lewat WhatsApp", live ? "Tekan kirim di WhatsApp, lalu kirim kode panggungnya terpisah." : "Statusnya jadi Sudah masuk begitu kodenya dipakai.");
+            if (live) personAction(id, "terkirim", () => adminApi.invitePerson(id));
+            else setDemoAccess((a) => ({ ...a, [id]: "terkirim" }));
           }}
+          onInvited={live ? (id) => personAction(id, "terkirim", () => adminApi.invitePerson(id)) : undefined}
           onRevoke={(id) => {
-            setAccess((a) => ({ ...a, [id]: "dicabut" }));
             notify("Lock", "Akses dicabut", "Link lama sudah tidak berlaku.");
+            if (live) personAction(id, "dicabut", () => adminApi.revokePerson(id));
+            else setDemoAccess((a) => ({ ...a, [id]: "dicabut" }));
           }}
+          onRestore={
+            live
+              ? (id) => {
+                  notify("Lock", "Akses dipulihkan", "Linknya bisa dipakai lagi.");
+                  personAction(id, "terkirim", () => adminApi.restorePerson(id));
+                }
+              : undefined
+          }
+          onCopied={(what) => notify("Copy", `${what} disalin`, "Kirim sendiri lewat WhatsApp atau chat lain.")}
+          onSavePerson={live ? savePerson : undefined}
+          onDeletePerson={live ? deletePerson : undefined}
         />
       )}
       {page === "tamu" && (
@@ -575,15 +807,21 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
           phase={phase}
           initialDraft={sc.rundownDraft?.(events)}
           initialEditId={sc.rundownEdit}
+          people={people}
           onSave={(next, send) => {
             const before = events;
             setEvents(next);
             notify("Calendar", "Rundown disimpan", send ? `Notifikasi “Rundown berubah” dikirim ke ${present} tamu.` : "Tanpa notifikasi ke tamu.");
             if (!live) return;
-            void adminApi.saveRundown(next).catch((e: unknown) => {
-              setEvents(before);
-              notify("Close", "Rundown gagal disimpan", e instanceof Error ? e.message : "Coba lagi.");
-            });
+            void adminApi
+              .saveRundown(next)
+              // The MC's "rundown berubah" banner: they are holding a printed
+              // idea of the order, and the screen is the only way to tell them.
+              .then(() => patchStageAsAdmin((s) => ({ ...s, rundownChanged: true })).catch(() => undefined))
+              .catch((e: unknown) => {
+                setEvents(before);
+                notify("Close", "Rundown gagal disimpan", e instanceof Error ? e.message : "Coba lagi.");
+              });
           }}
         />
       )}
@@ -594,23 +832,45 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
           now={now}
           failSend={!!sc.failAnnouncement}
           onSend={(a) => {
-            const draft: Announcement = { ...a, id: `a${Date.now()}`, at: now, recipients: present, read: 0 };
+            const draft: Announcement = { ...a, id: `a${Date.now()}`, at: now, recipients: present, read: 0, source: "panitia" };
             setAnnouncements((list) => [...list, draft]);
             notify("Megaphone", "Pengumuman terkirim", `Muncul di HP ${present} tamu.`);
             if (!live) return;
+            drafts.current.add(draft.id);
             // The server mints the real id and timestamp; swapping the draft
             // for it keeps "kirim ulang" pointing at a row that exists.
             void adminApi
               .sendAnnouncement(a)
-              .then((saved) => setAnnouncements((list) => list.map((x) => (x.id === draft.id ? saved : x))))
+              .then((saved) => {
+                drafts.current.delete(draft.id);
+                // A refresh may have brought the saved row in already.
+                setAnnouncements((list) => [...list.filter((x) => x.id !== draft.id && x.id !== saved.id), saved]);
+              })
               .catch((e: unknown) => {
                 setAnnouncements((list) => list.map((x) => (x.id === draft.id ? { ...x, failed: true } : x)));
                 notify("Close", "Pengumuman gagal terkirim", e instanceof Error ? e.message : "Coba lagi.");
               });
           }}
+          resendAny={live}
           onResend={(id) => {
-            setAnnouncements((list) => list.map((a) => (a.id === id ? { ...a, failed: false, at: now, recipients: present, read: 0 } : a)));
-            notify("Megaphone", "Pengumuman terkirim ulang", `Muncul di HP ${present} tamu.`);
+            if (!live) {
+              setAnnouncements((list) => list.map((a) => (a.id === id ? { ...a, failed: false, at: now, recipients: present, read: 0 } : a)));
+              return notify("Megaphone", "Pengumuman terkirim ulang", `Muncul di HP ${present} tamu.`);
+            }
+            const row = announcements.find((a) => a.id === id);
+            // A draft that failed never reached the server, so there is nothing
+            // to resend there: it goes out again as new.
+            const call =
+              drafts.current.has(id) && row
+                ? adminApi.sendAnnouncement({ title: row.title, body: row.body, roomId: row.roomId })
+                : adminApi.resendAnnouncement(id);
+            void call
+              .then((saved) => {
+                drafts.current.delete(id);
+                setAnnouncements((list) => [...list.filter((x) => x.id !== id && x.id !== saved.id), saved]);
+                notify("Megaphone", "Pengumuman terkirim ulang", `Muncul di HP ${saved.recipients} tamu.`);
+              })
+              .catch((e: unknown) => notify("Close", "Gagal mengirim ulang", e instanceof Error ? e.message : "Coba lagi."));
           }}
         />
       )}
@@ -680,9 +940,21 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
       {page === "pengaturan" && (
         <Settings
           settings={settings}
-          today={TODAY}
+          today={live ? new Date() : TODAY}
           onSave={(s) => saveSettings(s, "Pengaturan disimpan", "Berlaku di HP tamu dalam beberapa detik.")}
           onCopied={(what) => notify("Copy", `${what} disalin`, "Tempel di grup panitia.")}
+          doorQr={live}
+          onResetStage={
+            live
+              ? () =>
+                  resetStageAsAdmin()
+                    .then((s) => {
+                      setStage(s);
+                      notify("Check", "Panggung direset", "Layar MC dan pembicara kembali ke awal acara.");
+                    })
+                    .catch((e: unknown) => notify("Close", "Panggung gagal direset", e instanceof Error ? e.message : "Coba lagi."))
+              : undefined
+          }
         />
       )}
 
@@ -715,7 +987,7 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
           icon="Lock"
           iconTone="ink"
           title="Sesi kamu sudah habis"
-          description="Demi keamanan, sesi admin berakhir setelah 12 jam. Masuk lagi dengan PIN baru dari email."
+          description={`Demi keamanan, sesi admin berakhir setelah 12 jam. ${live ? "Masuk lagi dengan PIN admin." : "Masuk lagi dengan PIN baru dari email."}`}
           onClose={() => undefined}
           actions={
             <Button
@@ -743,16 +1015,21 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
  * 8th but in any zone west of London as the 7th.
  */
 function fromWireSettings(s: WireSettings): AdminSettings {
-  const [y, m, d] = s.date.split("-").map(Number);
+  const [y, m, d] = (s.date ?? "").split("-").map(Number);
+  // A row saved without a date would otherwise become Invalid Date, and every
+  // day count on the dashboard NaN. The bundled day is the better guess.
+  const date = y && m && d ? new Date(y, m - 1, d) : new Date(dayOf(EVENT.startsAt));
   return {
     eventName: s.eventName,
-    date: new Date(y, m - 1, d),
-    place: s.place.name ? { name: s.place.name, address: s.place.address } : null,
+    date,
+    place: s.place?.name ? { name: s.place.name, address: s.place.address } : null,
     doorCode: s.doorCode,
     panitiaPin: s.panitiaPin,
     countdown: s.countdown,
     finalFeedbackAt: s.finalFeedbackAt,
     codesChangedAt: s.codesChangedAt,
+    inviteTemplate: s.inviteTemplate ?? "",
+    contact: { name: s.contact?.name ?? "", phone: s.contact?.phone ?? "" },
   };
 }
 
@@ -768,7 +1045,21 @@ function toWireSettings(s: AdminSettings): WireSettings {
     countdown: s.countdown,
     finalFeedbackAt: s.finalFeedbackAt,
     codesChangedAt: s.codesChangedAt,
+    // PUT replaces the whole row: leaving these out would wipe them.
+    inviteTemplate: s.inviteTemplate,
+    contact: s.contact,
   };
+}
+
+/**
+ * The server's announcements, plus the drafts it has not confirmed yet.
+ *
+ * Sorted by `at` so "the last one" -- the dashboard's card -- is the one that
+ * most recently went out, resends included.
+ */
+function mergeAnnouncements(server: Announcement[], local: Announcement[], drafts: Set<string>): Announcement[] {
+  const pending = local.filter((a) => drafts.has(a.id));
+  return [...server, ...pending].sort((a, b) => a.at - b.at);
 }
 
 /**

@@ -9,7 +9,7 @@ import { IconBadge, type IconTone } from "../components/IconBadge";
 import type { IconName } from "../components/iconPaths";
 import { formatTime } from "../data/agenda";
 import { ROOMS } from "../data/rooms";
-import { HELP_SHORT, PANITIA_CONTACT, type SpeakerHelp, type StageQuestion } from "./data";
+import { HELP_SHORT, panitiaContact, type SpeakerHelp, type StageQuestion } from "./data";
 import "./stage.css";
 
 /** Bottom sheet (phone pattern), floating at the bottom on tablets. Portaled to <body> so a clipped or masked parent (e.g. the Kenalan card) can't trap it. */
@@ -242,11 +242,25 @@ export function ReadMode({
   );
 }
 
-/** "Hubungi panitia": a real button that opens the committee's contact (copy number / open WhatsApp). */
+/** 0812…, +62 812… or 62812… all become the 62812… that wa.me wants. */
+const waNumber = (phone: string) => {
+  const d = phone.replace(/\D/g, "");
+  return d.startsWith("62") ? d : `62${d.replace(/^0/, "")}`;
+};
+
+/**
+ * "Hubungi panitia": a real button that opens the committee's contact (copy number / open WhatsApp).
+ *
+ * Until the committee fills in a number (Pengaturan) there is nothing to dial,
+ * so it says that quietly instead of opening an empty WhatsApp chat.
+ */
 export function ContactButton({ block, label = "Hubungi panitia", onCopied }: { block?: boolean; label?: string; onCopied?: () => void }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const wa = `https://wa.me/62${PANITIA_CONTACT.phone.replace(/\D/g, "").replace(/^0/, "")}`;
+  const contact = panitiaContact();
+  const name = contact.name || "Panitia";
+  if (!contact.phone.trim()) return <span className="t-p-h5 stage-muted">Kontak panitia belum diatur</span>;
+  const wa = `https://wa.me/${waNumber(contact.phone)}`;
   return (
     <>
       <Button size="small" style="tertiary" icon="Headset" block={block} onClick={() => setOpen(true)}>
@@ -255,10 +269,10 @@ export function ContactButton({ block, label = "Hubungi panitia", onCopied }: { 
       {open && (
         <Sheet icon="Headset" tone="ink" title="Kontak panitia" onClose={() => setOpen(false)}>
           <div className="contact-card">
-            <Avatar initial={PANITIA_CONTACT.name.charAt(0)} size="M" />
+            <Avatar initial={name.charAt(0)} size="M" />
             <span className="contact-card__text">
-              <span className="t-p-h4-bold">{PANITIA_CONTACT.name}</span>
-              <span className="t-p-h4 contact-card__phone">{PANITIA_CONTACT.phone}</span>
+              <span className="t-p-h4-bold">{name}</span>
+              <span className="t-p-h4 contact-card__phone">{contact.phone}</span>
             </span>
           </div>
           <div className="stack-actions">
@@ -266,7 +280,7 @@ export function ContactButton({ block, label = "Hubungi panitia", onCopied }: { 
               block
               icon={copied ? "Check" : "Copy"}
               onClick={() => {
-                navigator.clipboard?.writeText(PANITIA_CONTACT.phone.replace(/\s/g, "")).catch(() => undefined);
+                navigator.clipboard?.writeText(contact.phone.replace(/\s/g, "")).catch(() => undefined);
                 setCopied(true);
                 onCopied?.();
               }}

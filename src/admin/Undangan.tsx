@@ -149,7 +149,8 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
   const [selected, setSelected] = useState<Set<string>>(new Set(initialSelected));
   const [single, setSingle] = useState<AdminGuest | null>(() => (initialSingle ? (guests.find((g) => g.id === initialSingle) ?? null) : null));
   const [bulkConfirm, setBulkConfirm] = useState(initialDialog === "bulk-confirm");
-  const [run, setRun] = useState<{ ids: string[]; done: number; failed: AdminGuest[]; finished: boolean } | null>(null);
+  /** `links` is set live only: the server mints the WhatsApp links, the committee taps each one. */
+  const [run, setRun] = useState<{ ids: string[]; done: number; failed: AdminGuest[]; finished: boolean; links?: { id: string; name: string; waUrl: string }[] } | null>(null);
   const [editing, setEditing] = useState(initialDialog === "template");
   const [adding, setAdding] = useState(initialDialog?.startsWith("tambah") ?? false);
   const [highlight, setHighlight] = useState<string | null>(null);
@@ -198,6 +199,28 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
     const ids = list.map((g) => g.id);
     ids.forEach((id) => onPatch(id, { invite: "mengirim", inviteError: undefined }));
     setRun({ ids, done: 0, failed: [], finished: false });
+
+    if (onSendInvites) {
+      // Live: one request for the whole batch. Nothing is delivered by the
+      // server yet -- it marks the batch sent and hands back a wa.me link per
+      // guest. A browser allows one popup per click at most, so the links are
+      // listed in the result for the committee to open one by one.
+      void onSendInvites(ids)
+        .then((plans) => {
+          ids.forEach((id) => onPatch(id, { invite: "terkirim", invitedAt: now, inviteError: undefined }));
+          const links = plans.map((p) => ({ id: p.guestId, name: list.find((g) => g.id === p.guestId)?.name ?? "", waUrl: p.waUrl }));
+          setRun({ ids, done: ids.length, failed: [], finished: true, links });
+        })
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : "Gagal mengirim";
+          const failed = list.map((g) => ({ ...g, invite: "gagal" as const, inviteError: msg }));
+          ids.forEach((id) => onPatch(id, { invite: "gagal", invitedAt: now, inviteError: msg }));
+          setRun({ ids, done: ids.length, failed, finished: true });
+          onDone(0, failed);
+        });
+      return;
+    }
+
     let i = 0;
     const failed: AdminGuest[] = [];
     const step = () => {
@@ -485,9 +508,15 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
         <Dialog
           icon={run.failed.length ? "Close" : "Check"}
           iconTone={run.failed.length ? "red" : "green"}
-          title={run.failed.length ? `${run.ids.length - run.failed.length} terkirim, ${run.failed.length} gagal` : `${run.ids.length} undangan terkirim`}
-          description={run.failed.length ? "Cek nomor yang gagal. Kirim ulang setelah nomornya benar, atau coba lagi sekarang." : "Status berubah jadi Dibaca begitu tamu membuka pesannya."}
-          form={run.failed.length > 0}
+          title={run.failed.length ? `${run.ids.length - run.failed.length} terkirim, ${run.failed.length} gagal` : run.links ? `${run.ids.length} link WhatsApp siap` : `${run.ids.length} undangan terkirim`}
+          description={
+            run.failed.length
+              ? "Cek nomor yang gagal. Kirim ulang setelah nomornya benar, atau coba lagi sekarang."
+              : run.links
+                ? "Buka satu per satu, lalu tekan kirim di WhatsApp."
+                : "Status berubah jadi Dibaca begitu tamu membuka pesannya."
+          }
+          form={run.failed.length > 0 || !!run.links?.length}
           onClose={() => setRun(null)}
           actions={
             run.failed.length ? (
@@ -511,6 +540,18 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
             )
           }
         >
+          {!!run.links?.length && (
+            <ul className="diff-list">
+              {run.links.map((l) => (
+                <li key={l.id} className="diff-list__row">
+                  <span className="t-p-h4-bold diff-list__name">{l.name}</span>
+                  <a className="t-p-h5 diff-list__change" href={l.waUrl} target="_blank" rel="noopener noreferrer">
+                    Buka WhatsApp
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
           {run.failed.length > 0 && (
             <ul className="diff-list">
               {run.failed.map((g) => (
@@ -565,6 +606,7 @@ export function Undangan({ guests, now, template, initialTab, initialSelected, i
         <CsvImport
           state={csv}
           guests={guests}
+          sample={!onSendInvites}
           onChange={setCsv}
           onClose={() => setCsv(null)}
           onConfirm={(add, resend) => {
@@ -736,12 +778,15 @@ type CsvState = { step: "upload" | "review"; error?: string; file?: string; rows
 function CsvImport({
   state,
   guests,
+  sample,
   onChange,
   onClose,
   onConfirm,
 }: {
   state: CsvState;
   guests: AdminGuest[];
+  /** Offers the bundled sample file. Review cases only: live it would import fake guests. */
+  sample: boolean;
   onChange: (s: CsvState) => void;
   onClose: () => void;
   onConfirm: (add: { name: string; phone: string }[], resend: string[]) => void;
@@ -811,9 +856,11 @@ function CsvImport({
             <Button size="small" style="secondary" icon="File" onClick={() => input.current?.click()}>
               {state.error ? "Pilih file lain" : "Pilih file"}
             </Button>
-            <Button size="small" style="tertiary" onClick={() => load(SAMPLE_CSV, "contoh-tamu.csv", SAMPLE_CSV.length)}>
-              Pakai contoh data
-            </Button>
+            {sample && (
+              <Button size="small" style="tertiary" onClick={() => load(SAMPLE_CSV, "contoh-tamu.csv", SAMPLE_CSV.length)}>
+                Pakai contoh data
+              </Button>
+            )}
           </div>
           <input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(e) => readFile(e.target.files?.[0])} />
         </div>

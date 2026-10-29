@@ -70,6 +70,8 @@ export type Announcement = {
   /** How many opened it (sample until the guest app reports reads). */
   read: number;
   failed?: boolean;
+  /** Who announced it: the committee here, or the MC from the stage. */
+  source?: "panitia" | "mc";
 };
 export const SAMPLE_ANNOUNCEMENTS: Announcement[] = [
   { id: "a1", title: "Selamat datang!", body: "Check-in di pintu, lalu jelajahi 5 ruangan Potara.", roomId: "halaman-depan", at: 9 * 60 + 2, recipients: 6, read: 6 },

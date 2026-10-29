@@ -3,6 +3,7 @@ import { Button } from "../components/Button";
 import { Character } from "../components/Character";
 import { Icon } from "../components/Icon";
 import { TextField } from "../components/TextField";
+import { ApiError } from "../data/http";
 import { ADMIN_EMAIL } from "./data";
 import "./Login.css";
 import potaraLogo from "../assets/potara-logo.png";
@@ -20,7 +21,13 @@ export type LoginScenario = "email" | "pin" | "pin-expired" | "pin-locked";
  * a bundled constant would let a committee member in whose PIN the server
  * would refuse, and every later request would then fail with no explanation.
  */
-type Props = { scenario: LoginScenario; onSignedIn: (email: string, pin: string) => Promise<void> };
+/**
+ * onRequestPin is set live: the server decides whether the address is a
+ * committee one (and answers the same either way), so any well-formed email
+ * moves on to the PIN step. Without it -- a review case -- only the bundled
+ * address is accepted and the send is simulated.
+ */
+type Props = { scenario: LoginScenario; onSignedIn: (email: string, pin: string) => Promise<void>; onRequestPin?: (email: string) => Promise<void> };
 
 const mask = (email: string) =>
   email.replace(
@@ -29,7 +36,13 @@ const mask = (email: string) =>
   );
 
 /** Admin sign-in: email → 6-digit PIN sent to that email. */
-export function Login({ scenario, onSignedIn }: Props) {
+export function Login({ scenario, onSignedIn, onRequestPin }: Props) {
+  /**
+   * Live, nothing is emailed: the PIN is the server's ADMIN_PIN, which the
+   * committee gets from whoever runs the server. The copy says so rather
+   * than sending them to an inbox that will stay empty.
+   */
+  const live = Boolean(onRequestPin);
   const [step, setStep] = useState<"email" | "pin">(
     scenario === "email" ? "email" : "pin",
   );
@@ -40,6 +53,14 @@ export function Login({ scenario, onSignedIn }: Props) {
   const sendPin = () => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
       return setEmailError("Format email belum benar.");
+    if (onRequestPin) {
+      setSending(true);
+      void onRequestPin(email.trim())
+        .then(() => setStep("pin"))
+        .catch((e: unknown) => setEmailError(e instanceof Error ? e.message : "Gagal mengirim PIN. Coba lagi."))
+        .finally(() => setSending(false));
+      return;
+    }
     if (email.trim().toLowerCase() !== ADMIN_EMAIL)
       return setEmailError("Email ini tidak terdaftar sebagai admin.");
     setSending(true);
@@ -57,7 +78,7 @@ export function Login({ scenario, onSignedIn }: Props) {
       <section className="admin-login__card clay clay-light">
         <div className="admin-login__art">
           <Character
-            say={step === "email" ? "Halo, panitia!" : "Cek email ya!"}
+            say={step === "email" ? "Halo, panitia!" : live ? "Masukkan PIN!" : "Cek email ya!"}
           />
         </div>
         <div className="admin-login__form">
@@ -69,7 +90,7 @@ export function Login({ scenario, onSignedIn }: Props) {
               <div className="admin-head__text">
                 <h1 className="admin-title">Masuk ke HMD Admin</h1>
                 <p className="t-p-h4 admin-sub">
-                  Kami kirim PIN 6 angka ke email admin.
+                  {live ? "Masuk dengan email panitia dan PIN admin." : "Kami kirim PIN 6 angka ke email admin."}
                 </p>
               </div>
               <TextField
@@ -89,15 +110,16 @@ export function Login({ scenario, onSignedIn }: Props) {
                 disabled={!email || sending}
                 onClick={sendPin}
               >
-                {sending ? "Mengirim PIN…" : "Kirim PIN"}
+                {live ? (sending ? "Memeriksa…" : "Lanjut") : sending ? "Mengirim PIN…" : "Kirim PIN"}
               </Button>
             </>
           ) : (
             <PinStep
               email={email}
               scenario={scenario}
+              live={live}
               onBack={() => setStep("email")}
-              onSignedIn={(pin) => onSignedIn(email, pin)}
+              onSignedIn={(pin) => onSignedIn(email.trim(), pin)}
             />
           )}
         </div>
@@ -109,11 +131,13 @@ export function Login({ scenario, onSignedIn }: Props) {
 function PinStep({
   email,
   scenario,
+  live,
   onBack,
   onSignedIn,
 }: {
   email: string;
   scenario: LoginScenario;
+  live: boolean;
   onBack: () => void;
   onSignedIn: (pin: string) => Promise<void>;
 }) {
@@ -155,20 +179,24 @@ function PinStep({
   const submit = async () => {
     if (expired)
       return setError("PIN sudah kedaluwarsa. Kirim ulang PIN baru.");
+    let refused = "PIN salah";
     try {
       await onSignedIn(pin);
       return;
-    } catch {
-      // Any refusal is "wrong PIN" as far as this screen is concerned. The
-      // server rate-limits the attempts; the counter here is what the
-      // committee sees.
+    } catch (e) {
+      // A refusal (wrong email or PIN) costs a try and says the server's own
+      // words, since the email is only checked here. Anything else -- rate
+      // limit, server unreachable -- is not the committee's mistake and does
+      // not count against them.
+      if (e instanceof ApiError && e.status !== 401 && e.status !== 403) return setError(e.message);
+      if (e instanceof ApiError) refused = e.message.charAt(0).toUpperCase() + e.message.slice(1);
     }
     const n = tries + 1;
     setTries(n);
     setDigits(Array(PIN_LENGTH).fill(""));
     refs.current[0]?.focus();
     setError(
-      n >= MAX_TRIES ? null : `PIN salah. Sisa ${MAX_TRIES - n} percobaan.`,
+      n >= MAX_TRIES ? null : `${refused}. Sisa ${MAX_TRIES - n} percobaan.`,
     );
   };
 
@@ -184,15 +212,16 @@ function PinStep({
       <div className="admin-head__text">
         <h1 className="admin-title">Masukkan PIN</h1>
         <p className="t-p-h4 admin-sub">
-          PIN 6 angka dikirim ke {mask(email)}. Berlaku 10 menit.
+          {live ? "Masukkan PIN admin 6 angka dari panitia yang mengelola server." : `PIN 6 angka dikirim ke ${mask(email)}. Berlaku 10 menit.`}
         </p>
       </div>
       {locked ? (
         <div className="admin-login__locked card">
           <Icon name="Lock" />
           <span className="t-p-h4">
-            Terlalu banyak percobaan. Coba lagi dalam 15 menit, atau kirim ulang
-            PIN.
+            {live
+              ? "Terlalu banyak percobaan. Coba lagi dalam 15 menit."
+              : "Terlalu banyak percobaan. Coba lagi dalam 15 menit, atau kirim ulang PIN."}
           </span>
         </div>
       ) : (
@@ -235,16 +264,19 @@ function PinStep({
         <Button size="small" style="tertiary" onClick={onBack}>
           Ganti email
         </Button>
-        <Button
-          size="small"
-          style="tertiary"
-          disabled={resendIn > 0 && !locked}
-          onClick={resend}
-        >
-          {resendIn > 0 && !locked
-            ? `Kirim ulang (${resendIn}s)`
-            : "Kirim ulang PIN"}
-        </Button>
+        {/* Live there is no PIN to send again: it is fixed on the server. */}
+        {!live && (
+          <Button
+            size="small"
+            style="tertiary"
+            disabled={resendIn > 0 && !locked}
+            onClick={resend}
+          >
+            {resendIn > 0 && !locked
+              ? `Kirim ulang (${resendIn}s)`
+              : "Kirim ulang PIN"}
+          </Button>
+        )}
       </div>
     </>
   );

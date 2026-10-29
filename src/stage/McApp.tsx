@@ -8,11 +8,11 @@ import { IconBadge, type IconTone } from "../components/IconBadge";
 import type { IconName } from "../components/iconPaths";
 import { TextField } from "../components/TextField";
 import { Toast, ToastIcon } from "../components/Toast";
-import { EVENT } from "../config";
 import { formatTime } from "../data/agenda";
+import { ApiError } from "../data/http";
 import { ROOMS, roomIndexById } from "../data/rooms";
 import { KENALAN_TARGET, SHOW_CHECKIN_TIME } from "../config";
-import { useStageQuestions, useStageRoom, useStagePeople, useStageSessions } from "./live";
+import { useStageEvent, useStageQuestions, useStageRoom, useStagePeople, useStageSessions, type StageEvent } from "./live";
 import { RoomPicker } from "../admin/pickers";
 import {
   ANNOUNCE_TEMPLATES,
@@ -26,23 +26,34 @@ import {
   personById,
   sessionById,
   type McSignal,
+  type Person,
+  type ScriptPart,
   type StageQuestion,
   type StageQuestionState,
 } from "./data";
 import { MC_LINKS, type McTab } from "./links";
 import { BigTimer, StageCard, StageShell, TimerStrip } from "./StageShell";
 import { StageLogin } from "./StageLogin";
+import { StageNotice, useStageGate } from "./gate";
+import { sendAnnouncement } from "./remote";
 import { clockMinute, nextSession, remainingS, sortedSessions, useNow, useStage, useWakeLock, type StageState } from "./store";
 import { InkOption, MetaTags, QCard, ReadMode, Sheet, SpeakerRow, StageSystem } from "./ui";
 import { Welcome } from "./Welcome";
 
 /**
- * Who the MC is, read at render rather than at import.
+ * The first MC in the cast: who the review cases show.
  *
- * It used to be a module constant over the bundled PEOPLE, which meant a
- * committee that changed who was presenting had no way to tell this screen.
+ * A live screen uses whoever signed in instead (see McApp), because the
+ * first MC is only the right one while there is exactly one.
  */
-const mcPerson = () => allPeople().find((p) => p.role === "mc");
+const firstMc = () => allPeople().find((p) => p.role === "mc");
+const NO_MC: Person = { id: "", name: "MC", role: "mc", title: "MC", phone: "" };
+
+/**
+ * The bundled "Claude" scripts are a review fixture keyed by the bundled
+ * session ids; a live rundown only has what the committee wrote.
+ */
+const suggested = (demo: boolean, id: string): ScriptPart[][] => (demo ? (SCRIPTS[id] ?? []) : []);
 const roomName = (id: string) => ROOMS[roomIndexById(id)].name;
 const firstName = (n: string) => n.split(" ")[0];
 
@@ -53,18 +64,33 @@ export function McApp({ token, tab }: { token: string; /** Tab from the URL, for
   const [system, setSystem] = useState(known ? sc.system : "404");
   const [login, setLogin] = useState(sc.login);
   const [welcome, setWelcome] = useState(!!sc.welcome);
+  // "mc" is the real thing: a signed-in MC and server data only. Every other
+  // token is a review case with its own fixture.
+  const demo = token !== "mc";
+  const gate = useStageGate("mc", !demo);
+  const me = !demo && gate.state.kind === "in" ? gate.state.me : undefined;
   // Loads the rundown and the cast into the registry the rest of this file
-  // reads through sessionById / personById.
-  useStageSessions();
-  useStagePeople();
-  const MC = mcPerson() ?? { id: "", name: "MC", role: "mc" as const, title: "MC", phone: "" };
+  // reads through sessionById / personById. Held back until signed in.
+  const enabled = demo || Boolean(me);
+  useStageSessions({ demo, enabled });
+  useStagePeople({ demo, enabled });
+  const event = useStageEvent(demo);
+  // The cast entry when there is one (the committee may have renamed them),
+  // what the login returned otherwise.
+  const MC = (me ? (personById(me.id) ?? me) : demo ? firstMc() : undefined) ?? NO_MC;
   if (system) return <StageSystem kind={system} onRetry={() => setSystem(undefined)} />;
-  if (login) return <StageLogin person={MC} eventLabel={EVENT.name} initial={login} onDone={() => (setLogin(undefined), setWelcome(true))} />;
-  if (welcome) return <Welcome person={MC} sessions={sortedSessions()} onDone={() => setWelcome(false)} />;
-  return <McMain token={token} initialTab={tab} />;
+  if (!demo) {
+    const g = gate.state;
+    if (g.kind === "error") return <StageSystem kind="error" onRetry={gate.retry} />;
+    if (g.kind === "login") return <StageLogin person={g.person} eventLabel={event.name} initial="link" onSignedIn={gate.signedIn} onDone={() => setWelcome(true)} />;
+    if (g.kind !== "in") return <StageNotice state={g} role="mc" />;
+  }
+  if (login) return <StageLogin person={MC} eventLabel={event.name} initial={login} demo onDone={() => (setLogin(undefined), setWelcome(true))} />;
+  if (welcome) return <Welcome person={MC} sessions={sortedSessions()} event={event} onDone={() => setWelcome(false)} />;
+  return <McMain token={token} demo={demo} mc={MC} event={event} initialTab={tab} />;
 }
 
-function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
+function McMain({ token, demo, mc, event, initialTab }: { token: string; demo: boolean; mc: Person; event: StageEvent; initialTab?: McTab }) {
   const sc = MC_LINKS[token] ?? {};
   const [state, update] = useStage(sc.seed?.());
 
@@ -132,26 +158,12 @@ function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.speakerSignal]);
 
-  // A new guest question drops in shortly after opening the live demo
-  useEffect(() => {
-    if (sc.seed || state.phase !== "live") return;
-    const t = window.setTimeout(() => {
-      update((s) =>
-        s.questions.some((q) => q.id === "q-live")
-          ? s
-          : { ...s, questions: [...s.questions, { id: "q-live", sessionId: "talkshow", groupId: "kantor", text: "Boleh tahu siapa yang desain interior kantornya?", author: "Gita", at: clockMinute(s, Date.now()), state: "masuk" }] },
-      );
-      notify({ icon: "Message", title: "Pertanyaan baru", sub: "Gita · Soal kantor baru", action: { label: "Lihat", onClick: () => setTab("pertanyaan") } });
-    }, 6000);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const live = state.liveId ? sessionById(state.liveId) : undefined;
   const next = nextSession(state);
   const secs = remainingS(state, now);
   const setQ = (id: string, st: StageQuestionState) => update((s) => ({ ...s, questions: s.questions.map((q) => (q.id === id ? { ...q, state: st } : q)) }));
-  const newCount = state.questions.filter((q) => q.state === "masuk" && q.sessionId === (live?.id ?? "talkshow")).length;
+  // Same rule as the Pertanyaan tab: only the session on stage has an inbox.
+  const newCount = state.questions.filter((q) => q.state === "masuk" && q.sessionId === (state.liveId ?? "")).length;
 
   const startSession = (id: string) => {
     // One lookup, and a guard: the rundown is the committee's to edit while
@@ -185,7 +197,7 @@ function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
   ) : state.phase === "ended" ? (
     <TimerStrip title="Acara selesai" display="Selesai" />
   ) : sc.daysLeft ? (
-    <TimerStrip title={EVENT.name} label="hari H" display={`H-${sc.daysLeft}`} />
+    <TimerStrip title={event.name} label="hari H" display={`H-${sc.daysLeft}`} />
   ) : (
     next && <TimerStrip title={`Berikutnya: ${next.title}`} label="mulai" display={formatTime(next.start)} />
   );
@@ -202,7 +214,7 @@ function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
         <div className="notice-card">
           <span className="notice-card__row">
             <Icon name="Calendar" size={20} />
-            <span className="t-p-h5-bold notice-card__text">Rundown diubah panitia: Makan siang mundur 15 menit.</span>
+            <span className="t-p-h5-bold notice-card__text">{demo ? "Rundown diubah panitia: Makan siang mundur 15 menit." : "Rundown diubah panitia. Cek jadwal terbarunya."}</span>
           </span>
           <Button
             block
@@ -225,6 +237,9 @@ function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
     <Panggung
       state={state}
       now={now}
+      demo={demo}
+      mc={mc}
+      event={event}
       daysLeft={sc.daysLeft}
       onStart={startSession}
       onEnd={endSession}
@@ -235,7 +250,7 @@ function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
           return { ...s, checked: { ...s.checked, [sid]: cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i] } };
         })
       }
-      onVariant={(sid) => update((s) => ({ ...s, scriptVariant: { ...s.scriptVariant, [sid]: ((s.scriptVariant[sid] ?? 0) + 1) % SCRIPTS[sid].length }, checked: { ...s.checked, [sid]: [] } }))}
+      onVariant={(sid) => update((s) => ({ ...s, scriptVariant: { ...s.scriptVariant, [sid]: ((s.scriptVariant[sid] ?? 0) + 1) % Math.max(1, suggested(demo, sid).length) }, checked: { ...s.checked, [sid]: [] } }))}
       onSheet={setSheet}
       onResolveHelp={() => {
         update((s) => ({ ...s, speaker: "live", speakerHelp: undefined }));
@@ -245,13 +260,25 @@ function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
   );
   const pertanyaan = <Pertanyaan state={state} onSet={setQ} onRead={() => setReading(true)} />;
   const content =
-    tab === "panggung" ? panggung : tab === "pertanyaan" ? pertanyaan : tab === "sorotan" ? <Sorotan state={state} onCopied={() => notify({ icon: "Copy", title: "Sapaan disalin", sub: "Tinggal dibacakan." })} /> : (
+    tab === "panggung" ? panggung : tab === "pertanyaan" ? pertanyaan : tab === "sorotan" ? <Sorotan state={state} demo={demo} onCopied={() => notify({ icon: "Copy", title: "Sapaan disalin", sub: "Tinggal dibacakan." })} /> : (
       <Umumkan
         state={state}
         compose={!!sc.compose}
-        onSend={(a) => {
+        onSend={async (a) => {
+          // Live: the guests' phones read the server's announcements, so it
+          // only counts as sent -- and only joins "Sudah dikirim" -- once the
+          // server has it. A review case stays in this tab.
+          if (!demo) {
+            try {
+              await sendAnnouncement(a);
+            } catch (e) {
+              notify({ icon: "Close", title: "Pengumuman belum terkirim", sub: e instanceof ApiError && e.status !== 0 ? e.message : "Sinyal putus. Coba kirim lagi." });
+              return false;
+            }
+          }
           update((s) => ({ ...s, announcements: [...s.announcements, { ...a, at: clockMinute(s, Date.now()) }] }));
           notify({ icon: "Megaphone", title: "Pengumuman terkirim", sub: "Muncul di HP semua tamu yang hadir." });
+          return true;
         }}
       />
     );
@@ -350,6 +377,9 @@ function McMain({ token, initialTab }: { token: string; initialTab?: McTab }) {
 function Panggung({
   state,
   now,
+  demo,
+  mc: MC,
+  event,
   daysLeft,
   onStart,
   onEnd,
@@ -361,6 +391,9 @@ function Panggung({
 }: {
   state: StageState;
   now: number;
+  demo: boolean;
+  mc: Person;
+  event: StageEvent;
   daysLeft?: number;
   onStart: (id: string) => void;
   onEnd: () => void;
@@ -370,16 +403,16 @@ function Panggung({
   onSheet: (s: "rundown" | "panitia") => void;
   onResolveHelp: () => void;
 }) {
-  const MC = mcPerson() ?? { name: "MC" };
   const [confirmEnd, setConfirmEnd] = useState(false);
   const live = state.liveId ? sessionById(state.liveId) : undefined;
   const next = nextSession(state);
   const focus = live ?? next;
   const speaker = personById(focus?.speakerId);
   const secs = remainingS(state, now);
-  const variant = focus ? (state.scriptVariant[focus.id] ?? 0) % (SCRIPTS[focus.id]?.length ?? 1) : 0;
+  const options = focus ? suggested(demo, focus.id) : [];
+  const variant = (focus ? (state.scriptVariant[focus.id] ?? 0) : 0) % Math.max(1, options.length);
   const edited = focus ? state.scripts?.[focus.id] : undefined;
-  const script = focus ? (edited ?? SCRIPTS[focus.id]?.[variant] ?? []) : [];
+  const script = focus ? (edited ?? options[variant] ?? []) : [];
   const checked = focus ? (state.checked[focus.id] ?? []) : [];
   const ended = state.phase === "ended";
   const sent = state.mcSignal;
@@ -390,7 +423,7 @@ function Panggung({
         <div className="stage-head__text">
           <h1 className="t-display-h6 stage-head__title">Panggung</h1>
           <p className="t-p-h5 stage-head__sub">
-            {daysLeft ? `${EVENT.dateLabel} · ${daysLeft} hari lagi` : `Minggu, 8 Nov · ${formatTime(clockMinute(state, now))}`}
+            {daysLeft ? `${event.dateLabel} · ${daysLeft} hari lagi` : `${demo ? "Minggu, 8 Nov" : event.dateLabel} · ${formatTime(clockMinute(state, now))}`}
           </p>
         </div>
       </header>
@@ -415,7 +448,7 @@ function Panggung({
               <MetaTags
                 items={[
                   { icon: "MapPin", text: roomName(live.roomId) },
-                  { icon: "Users", text: `PIC ${live.pic}` },
+                  ...(live.pic ? [{ icon: "Users" as const, text: `PIC ${live.pic}` }] : []),
                 ]}
               />
               <BigTimer secs={secs} total={(live.end - live.start) * 60} />
@@ -446,7 +479,7 @@ function Panggung({
               <span className="t-p-h4">Pelajari rundown dan naskah dulu. Timer dan tombol aktif di hari H.</span>
             </>
           ) : (
-            next && (
+            next ? (
               <>
                 <span className="agenda-card__tags">
                   <Badge type="next" icon="Clock">{state.phase === "pre" ? "Belum mulai" : "Jeda"}</Badge>
@@ -456,13 +489,23 @@ function Panggung({
                   items={[
                     { icon: "Clock", text: `${formatTime(next.start)}–${formatTime(next.end)}` },
                     { icon: "MapPin", text: roomName(next.roomId) },
-                    { icon: "Users", text: `PIC ${next.pic}` },
+                    ...(next.pic ? [{ icon: "Users" as const, text: `PIC ${next.pic}` }] : []),
                   ]}
                 />
                 {speaker ? <SpeakerRow name={speaker.name} status={state.speaker === "siap" ? "siap" : "belum"} /> : <SpeakerRow name={MC.name} status="mc" />}
                 <Button block style="secondary" icon="ArrowRight" onClick={() => onStart(next.id)}>
                   Mulai {next.title}
                 </Button>
+              </>
+            ) : (
+              // Nothing left to start: the committee has not filled the
+              // rundown yet (a fresh event), or every session is done.
+              <>
+                <span className="agenda-card__tags">
+                  <Badge type="next" icon="Clock">Belum mulai</Badge>
+                </span>
+                <h2 className="now-card__title">Rundown masih kosong</h2>
+                <span className="t-p-h4">Panitia belum mengisi rundown. Layar ini terisi sendiri begitu sesinya ditambahkan.</span>
               </>
             )
           )}
@@ -472,7 +515,7 @@ function Panggung({
             <span className="t-p-h5-bold now-card__label">Berikutnya</span>
             <span className="t-p-h3-bold one-line">{next.title}</span>
             <span className="t-p-h5 one-line">
-              {roomName(next.roomId)} · {formatTime(next.start)}–{formatTime(next.end)} · PIC {next.pic}
+              {roomName(next.roomId)} · {formatTime(next.start)}–{formatTime(next.end)}{next.pic ? ` · PIC ${next.pic}` : ""}
             </span>
           </div>
         )}
@@ -552,7 +595,7 @@ function Panggung({
               );
             })}
           </ol>
-          {!edited && (SCRIPTS[focus.id]?.length ?? 0) > 1 && (
+          {!edited && options.length > 1 && (
             <div className="card-actions">
               <Button size="small" style="tertiary" icon="Sparkle" onClick={() => onVariant(focus.id)}>
                 Saran lain
@@ -605,7 +648,7 @@ function RundownList({ state }: { state: StageState }) {
             <span className="rd-item__body">
               <span className="t-p-h4-bold one-line">{s.title}</span>
               <span className="t-p-h5 stage-muted one-line">
-                {roomName(s.roomId)} · PIC {s.pic}
+                {roomName(s.roomId)}{s.pic ? ` · PIC ${s.pic}` : ""}
                 {sp ? ` · ${sp.name}` : ""}
               </span>
               {st === "now" && <Badge type="now">Sekarang</Badge>}
@@ -747,17 +790,34 @@ const SAY = [
   "Yang belum dapat kenalan, sekarang momen yang pas. Tinggal scan QR teman di sebelah kalian.",
 ];
 
-function Sorotan({ state, onCopied }: { state: StageState; onCopied: () => void }) {
-  const [i, setI] = useState(0);
+/**
+ * Greetings written from the room as it is, for a live screen.
+ *
+ * SAY names guests from the review fixture; reading those out at a real
+ * event would welcome people who are not there.
+ */
+function liveSay(recent: { name: string }[], rewards: { name: string }[]) {
+  const names = recent.slice(0, 2).map((g) => firstName(g.name));
+  return [
+    names.length ? `Selamat datang ${names.join(" dan ")} yang baru sampai! Langsung cek HP kalian ya, karakternya sudah menunggu.` : "",
+    rewards[0] ? `Tepuk tangan buat ${firstName(rewards[0].name)} yang sudah kumpulkan ${KENALAN_TARGET} kartu kenalan! Siapa berikutnya?` : "",
+    SAY[2],
+  ].filter(Boolean);
+}
+
+function Sorotan({ state, demo, onCopied }: { state: StageState; demo: boolean; onCopied: () => void }) {
+  const [n, setI] = useState(0);
   // From the server, projected down to what a stage screen may see: names
   // and arrival times, never phone numbers or invite tokens.
   const room = useStageRoom();
   const recent = room.recent.slice(0, 4);
   const rewards = room.rewards.slice(0, 3);
+  const say = demo ? SAY : liveSay(room.recent, room.rewards);
+  const i = n % say.length;
   // The session on stage, not a bundled "pembukaan".
   const rating = room.feedback[state.liveId ?? ""] ?? { count: 0, avg: 0, counts: [0, 0, 0, 0, 0] };
   const copy = () => {
-    navigator.clipboard?.writeText(SAY[i]).catch(() => undefined);
+    navigator.clipboard?.writeText(say[i]).catch(() => undefined);
     onCopied();
   };
 
@@ -789,10 +849,10 @@ function Sorotan({ state, onCopied }: { state: StageState; onCopied: () => void 
         }
       >
         <div className="say-box">
-          <p className="say-box__line">“{SAY[i]}”</p>
+          <p className="say-box__line">“{say[i]}”</p>
         </div>
         <div className="q-card__actions card-actions">
-          <Button size="small" style="tertiary" icon="Sparkle" onClick={() => setI((i + 1) % SAY.length)}>
+          <Button size="small" style="tertiary" icon="Sparkle" onClick={() => setI(i + 1)}>
             Saran lain
           </Button>
           <Button size="small" style="secondary" icon="Copy" onClick={copy}>
@@ -839,8 +899,10 @@ function Sorotan({ state, onCopied }: { state: StageState; onCopied: () => void 
 
 /* ---------------- Umumkan ---------------- */
 
-function Umumkan({ state, compose: startCompose, onSend }: { state: StageState; compose: boolean; onSend: (a: { title: string; body: string; roomId: string | null }) => void }) {
+/** onSend resolves false when the server refused or never answered: the dialog then stays open to try again. */
+function Umumkan({ state, compose: startCompose, onSend }: { state: StageState; compose: boolean; onSend: (a: { title: string; body: string; roomId: string | null }) => Promise<boolean> }) {
   const [confirm, setConfirm] = useState<{ title: string; body: string; roomId: string | null } | null>(null);
+  const [sending, setSending] = useState(false);
   const [compose, setCompose] = useState(startCompose);
   const [title, setTitle] = useState(startCompose ? "Foto bersama 5 menit lagi" : "");
   const [body, setBody] = useState(startCompose ? "Kumpul di Halaman Depan ya!" : "");
@@ -917,23 +979,28 @@ function Umumkan({ state, compose: startCompose, onSend }: { state: StageState; 
           iconTone="coral"
           title="Kirim pengumuman?"
           description={`Muncul di HP ${here} tamu. Tidak bisa ditarik setelah terkirim.`}
-          onClose={() => setConfirm(null)}
+          onClose={() => !sending && setConfirm(null)}
           actions={
             <>
               <Button
                 icon="Megaphone"
+                disabled={sending}
                 onClick={() => {
-                  onSend(confirm);
-                  setConfirm(null);
-                  setCompose(false);
-                  setTitle("");
-                  setBody("");
-                  setRoomId(null);
+                  setSending(true);
+                  void onSend(confirm).then((ok) => {
+                    setSending(false);
+                    if (!ok) return;
+                    setConfirm(null);
+                    setCompose(false);
+                    setTitle("");
+                    setBody("");
+                    setRoomId(null);
+                  });
                 }}
               >
-                Kirim sekarang
+                {sending ? "Mengirim…" : "Kirim sekarang"}
               </Button>
-              <Button style="tertiary" onClick={() => setConfirm(null)}>
+              <Button style="tertiary" disabled={sending} onClick={() => setConfirm(null)}>
                 Kembali
               </Button>
             </>
