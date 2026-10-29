@@ -79,6 +79,14 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
         await app.load(SCENE.url);
         appRef.current = app;
         applySceneFixes(app);
+        // Spline leaves hidden objects out of a code export, so the clothes
+        // are exported visible -- all of them at once. Undressed here, before
+        // the canvas is ever on screen; the dressing effect below puts on
+        // whatever this guest chose.
+        for (const node of ALL_OUTFIT_NODES) {
+          const obj = app.findObjectByName(node);
+          if (obj) obj.visible = false;
+        }
         setWardrobe(reportWardrobe(app));
         setProgress(100);
         setStatus("ready");
