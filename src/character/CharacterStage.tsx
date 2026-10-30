@@ -24,6 +24,7 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
 
   const [status, setStatus] = useState<StageStatus>("idle");
   const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<HTMLElement | null>(null);
   const [preview, setPreview] = useState<Outfit | null>(null);
   /** Whether this scene actually carries the clothes -- detected, not configured. */
@@ -53,6 +54,7 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
     const canvas = canvasRef.current;
     if (!canvas) return;
     setStatus("loading");
+    setError(null);
 
     void (async () => {
       try {
@@ -92,6 +94,10 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
         setStatus("ready");
       } catch (err) {
         console.warn("[CharacterStage] scene failed to load:", err);
+        // Kept for /karakter to show: a phone has no console to read, and
+        // "it shows 2D" alone does not say whether WebGL, the network or the
+        // scene file was the problem.
+        setError(err instanceof Error ? err.message : String(err));
         setStatus("failed");
       }
     })();
@@ -213,8 +219,8 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
   }, [status]);
 
   const value = useMemo<CharacterStageValue>(
-    () => ({ status, progress, claim, activeSlot, previewOutfit, capture, loadAnyway }),
-    [status, progress, claim, activeSlot, previewOutfit, capture, loadAnyway],
+    () => ({ status, progress, error, claim, activeSlot, previewOutfit, capture, loadAnyway }),
+    [status, progress, error, claim, activeSlot, previewOutfit, capture, loadAnyway],
   );
 
   return <CharacterStageContext.Provider value={value}>{children}</CharacterStageContext.Provider>;

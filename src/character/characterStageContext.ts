@@ -7,6 +7,8 @@ export type CharacterStageValue = {
   status: StageStatus;
   /** 0–100 while the scene downloads. */
   progress: number;
+  /** Why the scene did not load, when status is "failed". */
+  error: string | null;
   /**
    * Lends the one shared canvas to a slot, and returns the release function.
    * The most recently mounted slot wins, so the screen the guest is looking at
@@ -22,13 +24,14 @@ export type CharacterStageValue = {
    * The frame is taken when called; only the cropping happens afterwards.
    */
   capture: () => Promise<string | null>;
-  /** Load now even though the connection heuristic chose to skip. */
+  /** Load now even though the connection heuristic chose to skip, or retry after a failure. */
   loadAnyway: () => void;
 };
 
 const NOOP: CharacterStageValue = {
   status: "idle",
   progress: 0,
+  error: null,
   claim: () => () => {},
   activeSlot: null,
   previewOutfit: () => {},

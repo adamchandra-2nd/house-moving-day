@@ -51,3 +51,18 @@
   background: var(--orange-splash);
   transition: width 180ms linear;
 }
+
+/* The failure reason under "3D gagal dimuat", small enough not to alarm a
+   guest but readable on a screenshot sent to the committee. */
+.character-stage__progress:has(.character-stage__error) {
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--radius-large);
+}
+.character-stage__error {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  opacity: 0.7;
+}

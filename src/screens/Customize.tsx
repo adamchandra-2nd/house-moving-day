@@ -94,6 +94,12 @@ export function Customize({ name, initialOutfit, onConfirm }: Props) {
             Koneksi lemah — muat karakter 3D?
           </button>
         )}
+        {stage.status === "failed" && (
+          <button type="button" className="character-stage__progress t-p-h5" onClick={stage.loadAnyway}>
+            3D gagal dimuat — coba lagi
+            {stage.error && <span className="character-stage__error">{stage.error.slice(0, 80)}</span>}
+          </button>
+        )}
       </div>
       <div className="flow__bottom">
         <section className="panel glass customize__panel">
