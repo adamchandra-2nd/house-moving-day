@@ -84,7 +84,7 @@ export function Narasi({ onDone }: { onDone: () => void }) {
               </Button>
             </div>
           ) : (
-            <span className="t-p-h5 narasi__hint">Tap kanan untuk lanjut · kiri untuk kembali</span>
+            <span className="t-p-h5 narasi__hint">Tap untuk lanjut</span>
           )}
         </section>
       </div>

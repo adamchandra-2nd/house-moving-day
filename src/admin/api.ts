@@ -162,6 +162,8 @@ export const adminApi = {
     request<void>(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "DELETE", token: loadSession() }),
 
   people: () => request<AdminPerson[]>("/api/admin/people", { token: loadSession() }),
+  /** The code MC and speakers sign in with (STAGE_CODE), for the committee to send them. */
+  stageCode: () => request<{ code: string }>("/api/admin/stage-code", { token: loadSession() }),
 
   /** The server mints the id; it is what the personal stage link carries. */
   addPerson: (p: Omit<Person, "id">) =>

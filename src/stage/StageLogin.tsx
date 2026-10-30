@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
@@ -14,7 +14,6 @@ import "./stage.css";
 export const STAGE_CODE = "246810";
 const LEN = 6;
 const MAX_TRIES = 3;
-const RESEND_S = 30;
 
 export type LoginStep = "link" | "kode" | "kode-salah" | "terkunci" | "dicabut";
 
@@ -23,7 +22,9 @@ const maskPhone = (p: string) => (!p ? "yang didaftarkan panitia" : p.includes("
 
 /**
  * MC and speakers may come from outside Potara, so there is no account: the admin sends a personal link on
- * WhatsApp, and the first open is confirmed with a 6-digit code sent to the same number.
+ * WhatsApp, and the first open is confirmed with the 6-digit stage code. Nothing sends that code by itself:
+ * the committee passes it on in a WhatsApp message of its own (Pengisi → Kirim kode). This screen used to
+ * say "kami kirim kode" behind a button that sent nothing, so speakers waited for a code that never came.
  */
 export function StageLogin({
   person,
@@ -46,17 +47,10 @@ export function StageLogin({
   const [digits, setDigits] = useState<string[]>(() => (initial === "kode-salah" ? "135790".split("") : Array(LEN).fill("")));
   const [tries, setTries] = useState(initial === "kode-salah" ? 1 : 0);
   const [error, setError] = useState(initial === "kode-salah");
-  const [wait, setWait] = useState(RESEND_S);
-  const [sending, setSending] = useState(false);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
   const isMc = person.role === "mc";
   const bg = ROOMS[isMc ? 0 : 4].image;
 
-  useEffect(() => {
-    if (step !== "kode" && step !== "kode-salah") return;
-    const t = window.setInterval(() => setWait((w) => Math.max(0, w - 1)), 1000);
-    return () => window.clearInterval(t);
-  }, [step]);
 
   /**
    * The code is the server's to accept.
@@ -125,25 +119,23 @@ export function StageLogin({
             <div className="stage-login__head">
               <h1 className="stage-login__title">Halo, {person.name.split(" ")[0] || "Pengisi acara"}!</h1>
               <p className="t-p-h4 stage-login__body">
-                Kamu {isMc ? "jadi MC" : person.title ? `jadi performance (${person.title.toLowerCase()})` : "jadi performance"} di {eventLabel}. Untuk keamanan, kami kirim kode 6 angka ke WhatsApp {maskPhone(person.phone)}.
+                Kamu {isMc ? "jadi MC" : person.title ? `jadi performance (${person.title.toLowerCase()})` : "jadi performance"} di {eventLabel}. Untuk keamanan, masuk dengan kode 6 angka yang dikirim panitia lewat WhatsApp ke {maskPhone(person.phone)}.
               </p>
             </div>
             <Button
               block
-              icon="Message"
-              disabled={sending}
+              icon="Lock"
               onClick={() => {
-                setSending(true);
-                window.setTimeout(() => {
-                  setSending(false);
-                  setStep("kode");
-                }, 800);
+                setTries(0);
+                setError(false);
+                setDigits(Array(LEN).fill(""));
+                setStep("kode");
               }}
             >
-              {sending ? "Mengirim kode…" : "Kirim kode ke WhatsApp"}
+              Masukkan kode
             </Button>
             <div className="login-help">
-              <span className="t-p-h5 stage-muted">Bukan nomormu, atau tidak dapat kode?</span>
+              <span className="t-p-h5 stage-muted">Bukan nomormu, atau belum dapat kode?</span>
               <ContactButton block />
             </div>
           </>
@@ -151,12 +143,12 @@ export function StageLogin({
           <>
             <div className="stage-login__head">
               <h1 className="stage-login__title">Masukkan kode</h1>
-              <p className="t-p-h4 stage-login__body">Kode 6 angka sudah dikirim ke WhatsApp {maskPhone(person.phone)}. Berlaku 10 menit.</p>
+              <p className="t-p-h4 stage-login__body">Kode 6 angka dari panitia, ada di chat WhatsApp {maskPhone(person.phone)}.</p>
             </div>
             {step === "terkunci" ? (
               <div className="stage-login__note">
                 <Icon name="Lock" size={20} />
-                <span className="t-p-h5-bold">Terlalu banyak percobaan. Coba lagi 15 menit lagi, atau minta kode baru.</span>
+                <span className="t-p-h5-bold">Terlalu banyak percobaan. Tunggu sebentar, lalu coba lagi.</span>
               </div>
             ) : (
               <div className="st-pin" role="group" aria-label="Kode 6 angka">
@@ -188,20 +180,10 @@ export function StageLogin({
               <Button size="small" style="tertiary" icon="ArrowLeft" onClick={() => setStep("link")}>
                 Kembali
               </Button>
-              <Button
-                size="small"
-                style="tertiary"
-                disabled={wait > 0 && step !== "terkunci"}
-                onClick={() => {
-                  setWait(RESEND_S);
-                  setTries(0);
-                  setError(false);
-                  setDigits(Array(LEN).fill(""));
-                  setStep("kode");
-                }}
-              >
-                {wait > 0 && step !== "terkunci" ? `Kirim ulang (${wait}d)` : "Kirim ulang kode"}
-              </Button>
+            </div>
+            <div className="login-help">
+              <span className="t-p-h5 stage-muted">Belum dapat kodenya?</span>
+              <ContactButton block />
             </div>
             {demo && <span className="t-p-h5 stage-muted">Kode demo: {STAGE_CODE}</span>}
           </>
