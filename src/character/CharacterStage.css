@@ -2,7 +2,10 @@
    screen. The slot provides the box; this just fills it. */
 .character-stage__canvas {
   position: absolute;
-  inset: 0;
+  /* Bottom-centred: on short screens it is sized taller and wider than its
+     slot, reaching up over the box (see CANVAS_LIFT in CharacterStage). */
+  left: 50%;
+  bottom: 0;
   width: 100%;
   height: 100%;
   display: block;
@@ -16,7 +19,7 @@
   pointer-events: none;
   /* Set from the rendered frame so the feet, not the canvas edge, meet the
      floor shadow -- the scene's camera leaves empty space under them. */
-  transform: translateY(var(--feet-gap, 0px));
+  transform: translate(-50%, var(--feet-gap, 0px));
 }
 
 /* Shown on /karakter only: there the guest is actively picking an outfit, so

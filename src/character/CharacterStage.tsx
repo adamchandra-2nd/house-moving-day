@@ -180,9 +180,14 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
     const resize = () => {
       const { width, height } = activeSlot.getBoundingClientRect();
       if (!width || !height) return;
-      app?.setSize(width, height);
+      // See CANVAS_LIFT. Scaled evenly, so the framing stays the same.
+      const h = Math.max(height, Math.min(FULL_HEIGHT, height + CANVAS_LIFT));
+      const w = Math.round((width * h) / height);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      app?.setSize(w, h);
       stopGrounding.current();
-      stopGrounding.current = ground(canvas, height);
+      stopGrounding.current = ground(canvas, h, h - height);
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -294,18 +299,35 @@ function applySceneFixes(app: Application) {
 const FALLBACK_FEET = 0.169;
 const FALLBACK_TOP = 0.178;
 
-function setGaps(canvas: HTMLCanvasElement, feet: number, top: number) {
+/**
+ * The box a <Character> gets is at most this tall; on shorter screens it
+ * shrinks with the space left between the header and the bottom panel.
+ */
+const FULL_HEIGHT = 340;
+/**
+ * How far the canvas may reach above a shrunk box. The scene frames the
+ * character with about a third of the canvas empty above and below it, so a
+ * canvas only as tall as a squeezed box drew the character a third smaller
+ * again: on an iPhone with Safari's toolbar out it came out far smaller than
+ * on a taller phone. Reaching up into the bubble's headroom over the box --
+ * where the canvas is still empty above the horns -- keeps it close to full
+ * size while leaving the bubble room above the head.
+ */
+const CANVAS_LIFT = 90;
+
+/** `lift`: how far the canvas reaches above the top of the <Character> box. */
+function setGaps(canvas: HTMLCanvasElement, feet: number, top: number, lift: number) {
   canvas.style.setProperty("--feet-gap", `${feet}px`);
   // Where the head is inside the <Character> box once moved down, for the
   // speech bubble: it sits on the horns, not on the canvas edge.
-  canvas.closest<HTMLElement>(".character")?.style.setProperty("--head-gap", `${top + feet}px`);
+  canvas.closest<HTMLElement>(".character")?.style.setProperty("--head-gap", `${top + feet - lift}px`);
 }
 
-function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
+function ground(canvas: HTMLCanvasElement, cssHeight: number, lift: number): () => void {
   // Start from where this scene's feet and horns sit (measured in Chromium),
   // so the character stands on the floor even where the frame cannot be
   // read back at all; the readings below then correct it to the pixel.
-  setGaps(canvas, Math.round(FALLBACK_FEET * cssHeight), Math.round(FALLBACK_TOP * cssHeight));
+  setGaps(canvas, Math.round(FALLBACK_FEET * cssHeight), Math.round(FALLBACK_TOP * cssHeight), lift);
   let timer = 0;
   let waiting = 0; // readings before the character first showed up
   let settling = 0; // readings since
@@ -319,7 +341,7 @@ function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
       if (rows !== null && rows.bottom > lowest) {
         lowest = rows.bottom;
         const gap = Math.max(0, Math.round(((canvas.height - 1 - rows.bottom) / canvas.height) * cssHeight));
-        setGaps(canvas, gap, Math.round((rows.top / canvas.height) * cssHeight));
+        setGaps(canvas, gap, Math.round((rows.top / canvas.height) * cssHeight), lift);
       }
       // Up to a minute for the character to appear, then ~6s more to catch
       // the parts that stream in after the first frame.
