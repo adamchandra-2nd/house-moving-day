@@ -1,5 +1,36 @@
 /** How often an open tab asks whether a new deploy is out. */
 const CHECK_EVERY_MS = 5 * 60 * 1000;
+/** No second reload within this long: a chunk that is really broken must not loop. */
+const STALE_RELOAD_GAP_MS = 60 * 1000;
+const STALE_RELOAD_KEY = "hmd:stale-reload";
+
+/** Whether an error is a lazy chunk that is gone from the server. */
+export const isStaleChunk = (err: unknown) =>
+  /dynamically imported module|Importing a module script failed|error loading dynamically imported/i.test(
+    err instanceof Error ? err.message : String(err),
+  );
+
+/**
+ * Reloads onto the current deploy after a lazy chunk failed to load, and says
+ * whether it did.
+ *
+ * A tab opened before a deploy still asks for the old build's chunk names
+ * (the Spline runtime is one), and once the new worker has taken over and
+ * cleared the old precache those are gone: the server answers with
+ * index.html and the import fails. That showed as "3D gagal dimuat" on
+ * /karakter, while a reload would have just worked.
+ */
+export function reloadForStaleChunk(): boolean {
+  try {
+    const last = Number(sessionStorage.getItem(STALE_RELOAD_KEY)) || 0;
+    if (Date.now() - last < STALE_RELOAD_GAP_MS) return false;
+    sessionStorage.setItem(STALE_RELOAD_KEY, String(Date.now()));
+  } catch {
+    return false; // without the guard a broken chunk could reload forever
+  }
+  window.location.reload();
+  return true;
+}
 
 /**
  * Registers the service worker and keeps every open tab on the latest deploy.
@@ -18,6 +49,10 @@ const CHECK_EVERY_MS = 5 * 60 * 1000;
  * reloaded mid-sentence.
  */
 export function keepUpToDate() {
+  // Route-level lazy imports that Vite preloads report through this event.
+  window.addEventListener("vite:preloadError", (e) => {
+    if (reloadForStaleChunk()) e.preventDefault();
+  });
   if (!("serviceWorker" in navigator) || import.meta.env.DEV) return;
 
   let touched = false;

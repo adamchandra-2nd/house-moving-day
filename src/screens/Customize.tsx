@@ -80,7 +80,7 @@ export function Customize({ name, initialOutfit, onConfirm }: Props) {
         </section>
       </div>
       <div className="flow__stage">
-        <Character say={bubble} />
+        <Character say={bubble} plain />
         {/* Only here: while the scene is still coming, outfit picks would not
             show on the flat sprite, so say so rather than look broken. */}
         {stage.status === "loading" && (

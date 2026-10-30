@@ -12,6 +12,12 @@ const BUBBLE_MS = 2200;
 type CharacterProps = {
   /** A line the character keeps saying (e.g. on RSVP). Tap reactions still override it briefly. */
   say?: string;
+  /**
+   * Never the captured sprite: on /karakter it is the guest's earlier look,
+   * so while the 3D is not there the character stood already dressed and
+   * did not change with the picks.
+   */
+  plain?: boolean;
 };
 
 /**
@@ -27,8 +33,9 @@ type CharacterProps = {
  * ever waits on it. Outside the guest tree (admin) the stage is a no-op and
  * Spline is never pulled in.
  */
-export function Character({ say }: CharacterProps) {
-  const sprite = useCharacterSprite();
+export function Character({ say, plain }: CharacterProps) {
+  const captured = useCharacterSprite();
+  const sprite = plain ? null : captured;
   const boxRef = useRef<HTMLButtonElement>(null);
   const { claim, activeSlot, status } = useCharacterStage();
   const slotRef = useRef<HTMLSpanElement>(null);
