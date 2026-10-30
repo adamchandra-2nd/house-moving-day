@@ -39,7 +39,17 @@
   border-radius: var(--radius-infinite);
 }
 .narasi__panel { animation: screen-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-.narasi__hint { color: var(--text-grey-300); }
+/* Small pill that hugs the text, like the chapter tag */
+.narasi__hint {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: var(--radius-infinite);
+  background: rgba(16, 16, 16, 0.05);
+  border: 1px solid var(--border);
+  color: var(--text-grey-300);
+}
 
 @keyframes story-fill {
   from { width: 0; }
