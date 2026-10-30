@@ -7,8 +7,10 @@ import App from "./App.tsx";
 import { initSprite } from "./character/sprite";
 import { registerMutationDefaults } from "./data/queries";
 import { persister, queryClient } from "./data/queryClient";
+import { keepUpToDate } from "./swUpdate";
 
 registerMutationDefaults();
+keepUpToDate();
 // Read the captured 3D character before first paint, so <Character> does not
 // flash the placeholder for a guest who has already dressed theirs.
 void initSprite();

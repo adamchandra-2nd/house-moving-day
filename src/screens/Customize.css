@@ -79,3 +79,6 @@
   background: var(--orange-splash);
   color: var(--text-on-accent);
 }
+/* The designers' outfit icons: no dashed placeholder frame behind a real picture. */
+.customize__thumb.has-icon { border: none; background: var(--background-primary); padding: 6px; }
+.customize__thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }

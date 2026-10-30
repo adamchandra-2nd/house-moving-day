@@ -15,7 +15,12 @@ export default defineConfig(({ mode }) => ({
      */
     ...(mode === 'lan' ? [basicSsl()] : []),
     VitePWA({
+      // A new deploy's worker takes over at once (skipWaiting + clientsClaim),
+      // which is also what moves phones still on an older build. When the
+      // page reloads onto it is decided in src/swUpdate.ts, which registers
+      // the worker itself.
       registerType: 'autoUpdate',
+      injectRegister: false,
       manifest: {
         name: 'HMD Event Companion · Potara',
         short_name: 'HMD Potara',
@@ -51,12 +56,13 @@ export default defineConfig(({ mode }) => ({
         globDirectory: 'dist',
         globPatterns: [
           'index.html',
-          'registerSW.js',
           'assets/index-*.{js,css}',
           'assets/*.woff2',
           'assets/*.webp',
         ],
         navigateFallback: 'index.html',
+        skipWaiting: true,
+        clientsClaim: true,
         cleanupOutdatedCaches: true,
         /** Spline's scene is far bigger than the default cache ceiling. */
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Application } from "@splinetool/runtime";
-import { ALL_OUTFIT_NODES, outfitNodes, type Outfit } from "../data/outfits";
+import { ALL_OUTFIT_NODES, READY_OUTFIT_NODES, outfitNodes, type Outfit } from "../data/outfits";
 import { CharacterStageContext, type CharacterStageValue, type StageStatus } from "./characterStageContext";
 import { capture as captureCanvas, characterRows } from "./capture";
 import { SCENE } from "./scene";
@@ -29,6 +29,7 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
   const [preview, setPreview] = useState<Outfit | null>(null);
   /** Whether this scene actually carries the clothes -- detected, not configured. */
   const [wardrobe, setWardrobe] = useState(false);
+  const [available, setAvailable] = useState<ReadonlySet<string> | null>(null);
   const slots = useRef<HTMLElement[]>([]);
   const forced = useRef(false);
 
@@ -90,6 +91,7 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
           if (obj) obj.visible = false;
         }
         setWardrobe(reportWardrobe(app));
+        setAvailable(new Set(ALL_OUTFIT_NODES.filter((n) => app.findObjectByName(n))));
         setProgress(100);
         setStatus("ready");
       } catch (err) {
@@ -219,8 +221,8 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
   }, [status]);
 
   const value = useMemo<CharacterStageValue>(
-    () => ({ status, progress, error, claim, activeSlot, previewOutfit, capture, loadAnyway }),
-    [status, progress, error, claim, activeSlot, previewOutfit, capture, loadAnyway],
+    () => ({ status, progress, error, available, claim, activeSlot, previewOutfit, capture, loadAnyway }),
+    [status, progress, error, available, claim, activeSlot, previewOutfit, capture, loadAnyway],
   );
 
   return <CharacterStageContext.Provider value={value}>{children}</CharacterStageContext.Provider>;
@@ -279,7 +281,22 @@ function applySceneFixes(app: Application) {
  * stalled reading used to end the whole loop.
  * Returns a cancel function.
  */
+/** Empty space under the feet and above the horns, as a share of the slot height. */
+const FALLBACK_FEET = 0.169;
+const FALLBACK_TOP = 0.178;
+
+function setGaps(canvas: HTMLCanvasElement, feet: number, top: number) {
+  canvas.style.setProperty("--feet-gap", `${feet}px`);
+  // Where the head is inside the <Character> box once moved down, for the
+  // speech bubble: it sits on the horns, not on the canvas edge.
+  canvas.closest<HTMLElement>(".character")?.style.setProperty("--head-gap", `${top + feet}px`);
+}
+
 function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
+  // Start from where this scene's feet and horns sit (measured in Chromium),
+  // so the character stands on the floor even where the frame cannot be
+  // read back at all; the readings below then correct it to the pixel.
+  setGaps(canvas, Math.round(FALLBACK_FEET * cssHeight), Math.round(FALLBACK_TOP * cssHeight));
   let timer = 0;
   let waiting = 0; // readings before the character first showed up
   let settling = 0; // readings since
@@ -293,11 +310,7 @@ function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
       if (rows !== null && rows.bottom > lowest) {
         lowest = rows.bottom;
         const gap = Math.max(0, Math.round(((canvas.height - 1 - rows.bottom) / canvas.height) * cssHeight));
-        canvas.style.setProperty("--feet-gap", `${gap}px`);
-        // Where the head is inside the <Character> box once moved down, for
-        // the speech bubble: it sits on the horns, not on the canvas edge.
-        const head = Math.round((rows.top / canvas.height) * cssHeight) + gap;
-        canvas.closest<HTMLElement>(".character")?.style.setProperty("--head-gap", `${head}px`);
+        setGaps(canvas, gap, Math.round((rows.top / canvas.height) * cssHeight));
       }
       // Up to a minute for the character to appear, then ~6s more to catch
       // the parts that stream in after the first frame.
@@ -423,8 +436,9 @@ function whenIdle(fn: () => void): () => void {
  * code change. A renamed node would be a silent bug otherwise.
  */
 function reportWardrobe(app: Application): boolean {
-  const missing = ALL_OUTFIT_NODES.filter((n) => !app.findObjectByName(n));
-  const found = ALL_OUTFIT_NODES.length - missing.length;
+  // Upcoming items are expected to be missing until the scene gains them.
+  const missing = READY_OUTFIT_NODES.filter((n) => !app.findObjectByName(n));
+  const found = READY_OUTFIT_NODES.length - missing.length;
 
   if (!found) {
     console.info(
@@ -435,7 +449,7 @@ function reportWardrobe(app: Application): boolean {
     );
   } else if (missing.length) {
     console.warn(
-      `[CharacterStage] ${missing.length}/${ALL_OUTFIT_NODES.length} outfit nodes not found in the scene:\n` +
+      `[CharacterStage] ${missing.length}/${READY_OUTFIT_NODES.length} outfit nodes not found in the scene:\n` +
         missing.map((m) => `  · ${m}`).join("\n") +
         "\nFix the `node` values in src/data/outfits.ts. " +
         "Run splineObjects() in the console for the names this scene actually has.",

@@ -9,6 +9,8 @@ export type CharacterStageValue = {
   progress: number;
   /** Why the scene did not load, when status is "failed". */
   error: string | null;
+  /** Outfit nodes the loaded scene actually has; null until it has loaded. */
+  available: ReadonlySet<string> | null;
   /**
    * Lends the one shared canvas to a slot, and returns the release function.
    * The most recently mounted slot wins, so the screen the guest is looking at
@@ -32,6 +34,7 @@ const NOOP: CharacterStageValue = {
   status: "idle",
   progress: 0,
   error: null,
+  available: null,
   claim: () => () => {},
   activeSlot: null,
   previewOutfit: () => {},

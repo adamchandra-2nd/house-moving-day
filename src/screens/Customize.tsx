@@ -30,6 +30,8 @@ export function Customize({ name, initialOutfit, onConfirm }: Props) {
   const [idle, setIdle] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const stage = useCharacterStage();
+  // Clothes the character can actually wear: upcoming ones wait for the scene.
+  const items = category.items.filter((i) => (stage.available ? stage.available.has(i.node) : !i.upcoming));
 
   // After a few quiet seconds, the character reminds the guest that the outfit is final.
   useEffect(() => {
@@ -119,7 +121,8 @@ export function Customize({ name, initialOutfit, onConfirm }: Props) {
             ))}
           </div>
           <div className="customize__items" role="radiogroup" aria-label={category.label}>
-            {[null, ...category.items.map((i) => i.label)].map((item) => {
+            {[null, ...items].map((entry) => {
+              const item = entry?.label ?? null;
               const selected = outfit[cat] === item;
               return (
                 <button
@@ -130,8 +133,8 @@ export function Customize({ name, initialOutfit, onConfirm }: Props) {
                   className={`customize__item clay clay-light${selected ? " is-selected" : ""}`}
                   onClick={() => pick(item)}
                 >
-                  <span className="customize__thumb">
-                    <Icon name={item ? "Sparkle" : "Close"} size={20} />
+                  <span className={`customize__thumb${entry ? " has-icon" : ""}`}>
+                    {entry ? <img src={entry.icon} alt="" loading="lazy" decoding="async" /> : <Icon name="Close" size={20} />}
                   </span>
                   <span className="t-p-h5-bold customize__item-label">{item ?? "Tanpa"}</span>
                   {selected && (
