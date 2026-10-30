@@ -758,7 +758,7 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
             notify("Pencil", parts ? "Naskah disimpan" : live ? "Kembali ke draf otomatis" : "Kembali ke saran Claude", "Langsung tampil di layar MC.");
           }}
           onSend={(id) => {
-            notify("Send", live ? "WhatsApp dibuka" : "Link terkirim lewat WhatsApp", live ? "Tekan kirim di WhatsApp, lalu kirim kodenya dari dialog ini." : "Statusnya jadi Sudah masuk begitu kodenya dipakai.");
+            notify("Send", live ? "WhatsApp dibuka" : "Link terkirim lewat WhatsApp", live ? "Tekan kirim di WhatsApp. Link dan kodenya ada di satu pesan." : "Statusnya jadi Sudah masuk begitu kodenya dipakai.");
             if (live) personAction(id, "terkirim", () => adminApi.invitePerson(id));
             else setDemoAccess((a) => ({ ...a, [id]: "terkirim" }));
           }}
