@@ -374,6 +374,10 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
   crewRef.current = { people, events };
   const onStage = useCallback((st: StageState) => {
     setStage(st);
+    // The scripts the committee saved live in this document. Read only from
+    // this browser's cache before, so after a reload, or on another laptop,
+    // Pengisi showed none of them.
+    setScripts(st.scripts ?? {});
     const sig = st.speakerSignal;
     if (sig?.kind === "bantuan" && sig.at > seenStage.current.help) {
       seenStage.current.help = sig.at;
@@ -751,10 +755,10 @@ export function AdminApp({ token, live = true }: Readonly<{ token: string; live?
               setScripts(scripts);
               notify("Close", "Naskah gagal disimpan", e instanceof Error ? e.message : "Coba lagi.");
             });
-            notify("Pencil", parts ? "Naskah disimpan" : "Kembali ke saran Claude", "Langsung tampil di layar MC.");
+            notify("Pencil", parts ? "Naskah disimpan" : live ? "Kembali ke draf otomatis" : "Kembali ke saran Claude", "Langsung tampil di layar MC.");
           }}
           onSend={(id) => {
-            notify("Send", live ? "WhatsApp dibuka" : "Link terkirim lewat WhatsApp", live ? "Tekan kirim di WhatsApp, lalu kirim kodenya lewat ⋯ → Kirim kode." : "Statusnya jadi Sudah masuk begitu kodenya dipakai.");
+            notify("Send", live ? "WhatsApp dibuka" : "Link terkirim lewat WhatsApp", live ? "Tekan kirim di WhatsApp, lalu kirim kodenya dari dialog ini." : "Statusnya jadi Sudah masuk begitu kodenya dipakai.");
             if (live) personAction(id, "terkirim", () => adminApi.invitePerson(id));
             else setDemoAccess((a) => ({ ...a, [id]: "terkirim" }));
           }}

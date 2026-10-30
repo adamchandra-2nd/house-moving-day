@@ -7,6 +7,7 @@ import { Icon } from "../components/Icon";
 import { TextField } from "../components/TextField";
 import { formatTime } from "../data/agenda";
 import { SCRIPTS, type Person, type ScriptPart } from "../stage/data";
+import { draftScript } from "../stage/draftScript";
 import { adminApi, stageLink, waLink, type PersonAccess } from "./api";
 import type { AdminEvent } from "./data";
 import { normalizePhone } from "./invite";
@@ -48,8 +49,8 @@ type Props = {
   onCopied?: (what: string) => void;
 };
 
-/** Scripts are suggestions for the sessions they were written for; any other session starts blank. */
-const suggested = (id: string): ScriptPart[] => SCRIPTS[id]?.[0] ?? [];
+/** The bundled scripts fit only the sample sessions they were written for (review cases). */
+const sample = (id: string): ScriptPart[] => SCRIPTS[id]?.[0] ?? [];
 
 const firstOf = (name: string) => name.split(" ")[0];
 
@@ -74,8 +75,20 @@ Masukkan kode ini setelah membuka link dari panitia. Jangan dibagikan ke orang l
 /** MC and speakers (may be from outside Potara): personal WhatsApp link + code, no account. */
 export function Pengisi({ people, events, access, scripts, live, initialEdit, onSend, onRevoke, onRestore, onInvited, onSaveScript, onSavePerson, onDeletePerson, onCopied }: Props) {
   const sessions = [...events].sort((a, b) => a.start - b.start);
+  // Live sessions get a draft from the rundown; the MC's screen drafts the same one.
+  const suggested = (id: string): ScriptPart[] => {
+    if (!live) return sample(id);
+    const s = events.find((e) => e.id === id);
+    return s ? draftScript(s, events, people.find((p) => p.id === s.speakerId)) : [];
+  };
   const [editing, setEditing] = useState<AdminEvent | null>(() => events.find((x) => x.id === initialEdit) ?? null);
   const [sending, setSending] = useState<Person | null>(null);
+  /** Live: the link message is open in WhatsApp; the dialog moves on to the code. */
+  const [linkSent, setLinkSent] = useState(false);
+  const closeSending = () => {
+    setSending(null);
+    setLinkSent(false);
+  };
   const [revoking, setRevoking] = useState<Person | null>(null);
   /** null: closed. `{}`: adding someone new. */
   const [person, setPerson] = useState<Partial<Person> | null>(null);
@@ -204,7 +217,7 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
         </Panel>
 
         <Panel icon="Pencil" tone="ink" title="Naskah MC">
-          <span className="t-p-h5 admin-muted">Disusun Claude dari rundown, tampil di layar MC per sesi. Klik untuk mengubah.</span>
+          <span className="t-p-h5 admin-muted">{live ? "Draf otomatis dari rundown" : "Disusun Claude dari rundown"}, tampil di layar MC per sesi. Klik untuk mengubah.</span>
           {sessions.length === 0 ? (
             <Empty icon="Calendar" tone="slate" title="Rundown masih kosong" body="Tambah sesi di menu Rundown, naskahnya muncul di sini." />
           ) : (
@@ -218,7 +231,13 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
                       {(scripts[s.id] ?? suggested(s.id)).length} baris{s.pic ? ` · PIC ${s.pic}` : ""}
                     </span>
                   </span>
-                  {scripts[s.id] ? <Badge type="neutral" icon="Pencil">Diedit</Badge> : SCRIPTS[s.id] ? <Badge type="ready" icon="Sparkle">Claude</Badge> : <Badge type="done">Kosong</Badge>}
+                  {scripts[s.id] ? (
+                    <Badge type="neutral" icon="Pencil">Diedit</Badge>
+                  ) : suggested(s.id).length ? (
+                    <Badge type="ready" icon="Sparkle">{live ? "Draf" : "Claude"}</Badge>
+                  ) : (
+                    <Badge type="done">Kosong</Badge>
+                  )}
                 </li>
               ))}
             </ul>
@@ -236,6 +255,8 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
         <ScriptEditor
           session={editing}
           value={scripts[editing.id] ?? suggested(editing.id)}
+          suggestion={suggested(editing.id)}
+          draft={!!live}
           edited={!!scripts[editing.id]}
           onClose={() => setEditing(null)}
           onSave={(parts) => {
@@ -266,30 +287,54 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
         <Dialog
           icon="Send"
           iconTone="green"
-          title={`Kirim link ke ${firstOf(sending.name)}?`}
+          title={live && linkSent ? `Kirim kode ke ${firstOf(sending.name)}` : `Kirim link ke ${firstOf(sending.name)}?`}
           description={
-            live
-              ? `WhatsApp terbuka dengan pesan berisi link pribadi ${firstOf(sending.name)}, siap dikirim ke ${sending.phone}. Setelah itu kirim kodenya lewat ⋯ → Kirim kode.`
-              : `Link pribadi dikirim ke WhatsApp ${sending.phone}. Saat dibuka, ${firstOf(sending.name)} memasukkan kode 6 angka yang kami kirim ke nomor yang sama.`
+            !live
+              ? `Link pribadi dikirim ke WhatsApp ${sending.phone}. Saat dibuka, ${firstOf(sending.name)} memasukkan kode 6 angka yang kami kirim ke nomor yang sama.`
+              : linkSent
+                ? stageCode
+                  ? `Langkah 2 dari 2: kirim kode panggung ${stageCode} dalam pesan terpisah. Tanpa kode ini, ${firstOf(sending.name)} tidak bisa masuk.`
+                  : `Kode panggung belum terbaca dari server. Muat ulang halaman ini, lalu kirim lewat ⋯ → Kirim kode.`
+                : `Langkah 1 dari 2: WhatsApp terbuka dengan pesan berisi link pribadi ${firstOf(sending.name)}, siap dikirim ke ${sending.phone}. Setelah itu kirim kode panggungnya.`
           }
-          onClose={() => setSending(null)}
+          onClose={closeSending}
           actions={
-            <>
-              <Button
-                icon="Send"
-                onClick={() => {
-                  // Opened inside the click, or a popup blocker eats it.
-                  if (live) window.open(waLink(sending.phone, inviteText(sending)), "_blank", "noopener");
-                  onSend(sending.id);
-                  setSending(null);
-                }}
-              >
-                {live ? "Buka WhatsApp" : "Kirim link"}
-              </Button>
-              <Button style="tertiary" onClick={() => setSending(null)}>
-                Kembali
-              </Button>
-            </>
+            live && linkSent ? (
+              <>
+                {stageCode && (
+                  <Button
+                    icon="Lock"
+                    onClick={() => {
+                      window.open(waLink(sending.phone, codeText(sending, stageCode)), "_blank", "noopener");
+                      closeSending();
+                    }}
+                  >
+                    Kirim kode
+                  </Button>
+                )}
+                <Button style="tertiary" onClick={closeSending}>
+                  Nanti saja
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  icon="Send"
+                  onClick={() => {
+                    // Opened inside the click, or a popup blocker eats it.
+                    if (live) window.open(waLink(sending.phone, inviteText(sending)), "_blank", "noopener");
+                    onSend(sending.id);
+                    if (live) setLinkSent(true);
+                    else closeSending();
+                  }}
+                >
+                  {live ? "Buka WhatsApp" : "Kirim link"}
+                </Button>
+                <Button style="tertiary" onClick={closeSending}>
+                  Kembali
+                </Button>
+              </>
+            )
           }
         />
       )}
@@ -457,12 +502,28 @@ function PersonEditor({
 const LABELS: ScriptPart["label"][] = ["Pembuka", "Poin", "Transisi", "Penutup"];
 
 /** Edit the MC script for one session. Saving pushes it straight to the MC's screen. */
-function ScriptEditor({ session, value, edited, onClose, onSave }: { session: AdminEvent; value: ScriptPart[]; edited: boolean; onClose: () => void; onSave: (parts: ScriptPart[] | null) => void }) {
+function ScriptEditor({
+  session,
+  value,
+  suggestion,
+  draft,
+  edited,
+  onClose,
+  onSave,
+}: {
+  session: AdminEvent;
+  value: ScriptPart[];
+  suggestion: ScriptPart[];
+  /** The suggestion is the rundown draft rather than a bundled Claude script. */
+  draft: boolean;
+  edited: boolean;
+  onClose: () => void;
+  onSave: (parts: ScriptPart[] | null) => void;
+}) {
   const [parts, setParts] = useState<ScriptPart[]>(value);
   const [tried, setTried] = useState(false);
   const set = (i: number, patch: Partial<ScriptPart>) => setParts(parts.map((p, k) => (k === i ? { ...p, ...patch } : p)));
   const empty = parts.some((p) => !p.text.trim()) || parts.length === 0;
-  const suggestion = suggested(session.id);
 
   return (
     <Dialog
@@ -477,7 +538,7 @@ function ScriptEditor({ session, value, edited, onClose, onSave }: { session: Ad
         // Only where there is a suggestion to go back to: a session added on the day has none.
         suggestion.length > 0 || edited ? (
           <Button style="tertiary" icon="Sparkle" disabled={!edited && JSON.stringify(parts) === JSON.stringify(suggestion)} onClick={() => (edited ? onSave(null) : setParts(suggestion))}>
-            {suggestion.length ? "Pakai saran Claude" : "Kosongkan naskah"}
+            {suggestion.length ? (draft ? "Pakai draf otomatis" : "Pakai saran Claude") : "Kosongkan naskah"}
           </Button>
         ) : undefined
       }
