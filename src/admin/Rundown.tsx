@@ -64,7 +64,7 @@ export function Rundown({ events, now, phase, initialDraft, initialEditId, peopl
   const locked = (e: AdminEvent) => status[e.id] === "done";
   const changed = draft.filter((d) => {
     const o = events.find((e) => e.id === d.id);
-    return !o || o.start !== d.start || o.end !== d.end || o.roomId !== d.roomId || o.title !== d.title || o.pic !== d.pic || o.speakerId !== d.speakerId;
+    return !o || o.start !== d.start || o.end !== d.end || o.roomId !== d.roomId || o.title !== d.title || o.pic !== d.pic || o.speakerId !== d.speakerId || o.qna !== d.qna;
   });
   const removed = events.filter((e) => !draft.some((d) => d.id === e.id));
   const dirty = changed.length > 0 || removed.length > 0;
@@ -233,6 +233,7 @@ export function Rundown({ events, now, phase, initialDraft, initialEditId, peopl
                     <span className="t-p-h5 rundown__event-time">
                       {formatTime(e.start)}–{formatTime(e.end)}
                       {e.pic ? ` · PIC ${e.pic}` : ""}
+                      {e.qna ? " · Q&A" : ""}
                     </span>
                   )}
                   {lock ? (
@@ -352,6 +353,10 @@ function EventEditor({ event, people, onClose, onApply, onDelete }: { event: Adm
   const [end, setEnd] = useState(event?.end ?? 14 * 60);
   const [pic, setPic] = useState(event?.pic ?? "");
   const [speakerId, setSpeakerId] = useState<string | undefined>(event?.speakerId);
+  // The server stores Q&A off unless told otherwise. There was no switch for
+  // it here, and saving an edit dropped it, so no live session ever opened
+  // "Tanya pembicara" for guests.
+  const [qna, setQna] = useState(event?.qna === true);
   const [tried, setTried] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const timeError = end <= start ? "Jam selesai harus setelah jam mulai." : start < DAY_START || end > DAY_END ? "Di luar jam acara (09.00–14.00)." : null;
@@ -361,7 +366,7 @@ function EventEditor({ event, people, onClose, onApply, onDelete }: { event: Adm
   const apply = () => {
     setTried(true);
     if (timeError || titleError || picError) return;
-    onApply({ id: event?.id ?? `acara-${Date.now()}`, title: title.trim(), roomId, start, end, pic: pic.trim(), speakerId });
+    onApply({ id: event?.id ?? `acara-${Date.now()}`, title: title.trim(), roomId, start, end, pic: pic.trim(), speakerId, qna });
   };
 
   if (confirmDelete && event) {
@@ -444,6 +449,12 @@ function EventEditor({ event, people, onClose, onApply, onDelete }: { event: Adm
         </div>
         <span className="t-p-h5 field__hint">Pembicara dapat link akses dari menu Pengisi acara.</span>
       </div>
+      <Toggle
+        label="Tamu bisa bertanya (Q&A)"
+        hint="Tombol “Tanya pembicara” muncul di HP tamu selama sesi ini berjalan."
+        checked={qna}
+        onChange={setQna}
+      />
     </Dialog>
   );
 }

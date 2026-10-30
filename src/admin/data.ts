@@ -58,7 +58,7 @@ export const ADMIN_GUESTS: AdminGuest[] = NAMES.map((name, i) => {
 
 /** Rundown item + who runs it (brief: the rundown shows the PIC). */
 export type AdminEvent = AgendaItem & { pic?: string; speakerId?: string };
-export const ADMIN_EVENTS: AdminEvent[] = SESSIONS.map((s) => ({ id: s.id, title: s.title, roomId: s.roomId, start: s.start, end: s.end, pic: s.pic, speakerId: s.speakerId }));
+export const ADMIN_EVENTS: AdminEvent[] = SESSIONS.map((s) => ({ id: s.id, title: s.title, roomId: s.roomId, start: s.start, end: s.end, pic: s.pic, speakerId: s.speakerId, qna: s.qna }));
 
 export type Announcement = {
   id: string;
