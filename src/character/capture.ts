@@ -49,13 +49,13 @@ function characterBand(data: Uint8ClampedArray, w: number, h: number): { top: nu
 }
 
 /**
- * The lowest row the character is drawn on -- its feet -- or null when the
- * frame is empty or unreadable.
+ * The rows the character is drawn on -- the top of its horns and its feet --
+ * or null when the frame is empty or unreadable.
  */
-export async function lowestOpaqueRow(canvas: HTMLCanvasElement): Promise<number | null> {
+export async function characterRows(canvas: HTMLCanvasElement): Promise<{ top: number; bottom: number } | null> {
   try {
     const frame = await readFrame(canvas);
-    return frame ? (characterBand(frame.data, frame.w, frame.h)?.bottom ?? null) : null;
+    return frame ? characterBand(frame.data, frame.w, frame.h) : null;
   } catch {
     return null;
   }

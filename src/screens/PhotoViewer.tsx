@@ -5,7 +5,6 @@ import { Dialog } from "../components/Dialog";
 import { Icon } from "../components/Icon";
 import { formatTime } from "../data/agenda";
 import { firstName, type GalleryPhoto } from "../data/gallery";
-import { ROOMS, roomIndexById } from "../data/rooms";
 import "./Gallery.css";
 
 const SWIPE = 50;
@@ -39,7 +38,6 @@ export function PhotoViewer({ photos, startId, confirmDelete, onClose, onDownloa
   });
 
   if (!photo) return null;
-  const room = ROOMS[roomIndexById(photo.roomId)].name;
 
   return (
     <div className="overlay-screen viewer screen-enter" role="dialog" aria-modal="true" aria-label="Foto">
@@ -81,7 +79,7 @@ export function PhotoViewer({ photos, startId, confirmDelete, onClose, onDownloa
           <span className="viewer__who-text">
             <span className="t-p-h4-bold">{photo.mine ? "Kamu" : firstName(photo.author)}</span>
             <span className="t-p-h5 viewer__meta">
-              {formatTime(photo.at)} · {room}
+              {formatTime(photo.at)}
             </span>
           </span>
         </div>

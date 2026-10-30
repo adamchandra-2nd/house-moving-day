@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -15,13 +15,21 @@ type Props = {
   savedNote?: string;
   onBack: () => void;
   onCollected: (note: string) => void;
+  /** When you last invited this guest (ms); the button rests for INVITE_COOLDOWN_MS after that. */
+  invitedAt?: number;
+  /** The invite is on its way to the server: no second tap meanwhile. */
+  inviting?: boolean;
+  onInvite: () => void;
 };
+
+/** "Ajak kenalan" can be sent again after 10 minutes if you still haven't met. */
+export const INVITE_COOLDOWN_MS = 10 * 60 * 1000;
 
 /**
  * Figma: Question Card — ask the guest in person, then prove you met by scanning their QR
  * (or typing the 4-digit code under it). The note is optional; the scan is what counts.
  */
-export function QuestionCard({ guest, savedNote, onBack, onCollected }: Props) {
+export function QuestionCard({ guest, savedNote, onBack, onCollected, invitedAt, inviting, onInvite }: Props) {
   const [note, setNote] = useState(savedNote ?? "");
   const [mode, setMode] = useState<"card" | "scan">("card");
   const [scan, setScan] = useState<ScanState>("scanning");
@@ -29,6 +37,16 @@ export function QuestionCard({ guest, savedNote, onBack, onCollected }: Props) {
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState(false);
   const saved = savedNote !== undefined;
+  // Re-check the invite cooldown every few seconds so "Ajak lagi" comes back on its own.
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!invitedAt) return;
+    const t = window.setInterval(() => setClock(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, [invitedAt]);
+  // The clock may predate a fresh invite; never count from before it.
+  const waitMs = invitedAt ? invitedAt + INVITE_COOLDOWN_MS - Math.max(clock, invitedAt) : 0;
+  const waiting = waitMs > 0;
 
   const onRead = useCallback(() => {
     setScan("found");
@@ -164,9 +182,15 @@ export function QuestionCard({ guest, savedNote, onBack, onCollected }: Props) {
             Kembali
           </Button>
         ) : (
-          <Button block icon="Scan" onClick={() => setMode("scan")}>
-            Scan QR {guest.name}
-          </Button>
+          <div className="question__actions">
+            {/* Lets them know you'd like to meet; no location, since the app room may not be where you really are */}
+            <Button block style="tertiary" icon={waiting ? "Check" : "UserPlus"} disabled={waiting || inviting} onClick={onInvite}>
+              {waiting ? `Ajakan terkirim · ${Math.ceil(waitMs / 60000)} mnt` : invitedAt ? "Ajak lagi" : "Ajak kenalan"}
+            </Button>
+            <Button block icon="Scan" onClick={() => setMode("scan")}>
+              Scan QR {guest.name}
+            </Button>
+          </div>
         )}
       </div>
     </div>

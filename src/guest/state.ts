@@ -1,6 +1,7 @@
 import type { NavTab } from "../components/BottomNav";
 import { COUNTDOWN_ENABLED, DEMO_NOW, MY_KENALAN_CODE } from "../config";
 import { rundownMinute } from "../data/clock";
+import type { GuestNotice } from "../data/notifications";
 import { SAMPLE_QUESTIONS, type AskedQuestion } from "../data/questions";
 import { EMPTY_OUTFIT, type Outfit } from "../data/outfits";
 import type { PickResult } from "../screens/PhotoPicker";
@@ -52,6 +53,17 @@ export type GuestState = {
   feedbackOffline: boolean;
   /** Announcements already shown as a toast, as `${id}@${at}` so a resend shows again. */
   seenAnnouncements: string[];
+  /** Notifikasi (the bell on Ruangan), with read/unread, saved with this invite's progress. */
+  notices: GuestNotice[];
+  /**
+   * Gallery photo ids this phone has already seen in a poll; null until the
+   * first one, which only records (a full gallery on arrival is not "new").
+   */
+  knownPhotos: string[] | null;
+  /** Other guests shared photos since Galeri was last opened: orange dot on its button. */
+  newPhotos: boolean;
+  /** Review cases only: "Ajak kenalan" sent (guest id → ms). Live sessions read the server's. */
+  invited: Record<string, number>;
   askClosed: boolean;
   askOffline: boolean;
   /** Review case: the MC reads the question while the guest is editing it. */
@@ -85,6 +97,10 @@ export const INITIAL: GuestState = {
   eventFeedback: {},
   feedbackOffline: false,
   seenAnnouncements: [],
+  notices: [],
+  knownPhotos: null,
+  newPhotos: false,
+  invited: {},
   askClosed: false,
   askOffline: false,
   askRace: false,
@@ -119,6 +135,9 @@ const PERSISTED = [
   "hadirAt",
   "eventFeedback",
   "seenAnnouncements",
+  "notices",
+  "knownPhotos",
+  "newPhotos",
 ] as const satisfies readonly (keyof GuestState)[];
 
 /**

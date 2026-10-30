@@ -88,6 +88,21 @@ export function useAnnouncementsQuery(enabled: boolean) {
 }
 
 /**
+ * "Ajak kenalan" both ways: invites to this guest (toast + Notifikasi) and the
+ * latest one this guest sent to each person (the card's cooldown). 15 s: an
+ * invite is "I'm around, come find me", stale within minutes.
+ */
+export function useKenalanInvitesQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.kenalanInvites,
+    queryFn: api.kenalanInvites,
+    enabled,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  }).data;
+}
+
+/**
  * Registered as defaults so a mutation that was paused offline can be resumed
  * after a reload, when the component that started it no longer exists.
  */

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Application } from "@splinetool/runtime";
 import { ALL_OUTFIT_NODES, outfitNodes, type Outfit } from "../data/outfits";
 import { CharacterStageContext, type CharacterStageValue, type StageStatus } from "./characterStageContext";
-import { capture as captureCanvas, lowestOpaqueRow } from "./capture";
+import { capture as captureCanvas, characterRows } from "./capture";
 import { SCENE } from "./scene";
 import "./CharacterStage.css";
 
@@ -173,6 +173,9 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
     return () => {
       observer.disconnect();
       stopGrounding.current();
+      // The 2D sprite that takes over this slot is cropped tight: its head is
+      // at the top of the box, so the 3D head position must not linger.
+      activeSlot.closest<HTMLElement>(".character")?.style.removeProperty("--head-gap");
     };
   }, [activeSlot, status]);
 
@@ -261,23 +264,39 @@ function applySceneFixes(app: Application) {
  * feet 80px too high, and two of those in a row agreed with each other. An
  * unfinished frame can only ever show the feet higher than they are, never
  * lower, so the lowest reading is the real one.
+ *
+ * The clock only starts once the character has been seen at all: a 1.6 MB
+ * scene can take longer than any fixed window to draw on a slow phone, and a
+ * window that ran out first left the character floating for the whole visit.
+ * Each reading is also capped, because decoding a frame stalls while the tab
+ * is in the background -- a guest switching to WhatsApp mid-load -- and one
+ * stalled reading used to end the whole loop.
  * Returns a cancel function.
  */
 function ground(canvas: HTMLCanvasElement, cssHeight: number): () => void {
   let timer = 0;
-  let tries = 0;
+  let waiting = 0; // readings before the character first showed up
+  let settling = 0; // readings since
   let lowest = -1;
   let cancelled = false;
+  const reading = () =>
+    Promise.race([characterRows(canvas), new Promise<null>((done) => window.setTimeout(() => done(null), 1500))]);
   const attempt = () => {
-    void lowestOpaqueRow(canvas).then((row) => {
+    void reading().then((rows) => {
       if (cancelled) return;
-      if (row !== null && row > lowest) {
-        lowest = row;
-        const gap = ((canvas.height - 1 - row) / canvas.height) * cssHeight;
-        canvas.style.setProperty("--feet-gap", `${Math.max(0, Math.round(gap))}px`);
+      if (rows !== null && rows.bottom > lowest) {
+        lowest = rows.bottom;
+        const gap = Math.max(0, Math.round(((canvas.height - 1 - rows.bottom) / canvas.height) * cssHeight));
+        canvas.style.setProperty("--feet-gap", `${gap}px`);
+        // Where the head is inside the <Character> box once moved down, for
+        // the speech bubble: it sits on the horns, not on the canvas edge.
+        const head = Math.round((rows.top / canvas.height) * cssHeight) + gap;
+        canvas.closest<HTMLElement>(".character")?.style.setProperty("--head-gap", `${head}px`);
       }
-      // ~9s: a 1.6 MB scene on a phone can take that long to finish drawing.
-      if (++tries < 30) timer = window.setTimeout(attempt, 300);
+      // Up to a minute for the character to appear, then ~6s more to catch
+      // the parts that stream in after the first frame.
+      const more = lowest < 0 ? ++waiting < 120 : ++settling < 20;
+      if (more) timer = window.setTimeout(attempt, lowest < 0 ? 500 : 300);
     });
   };
   timer = window.setTimeout(attempt, 200);

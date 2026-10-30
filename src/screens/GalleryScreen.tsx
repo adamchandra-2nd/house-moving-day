@@ -1,11 +1,9 @@
-import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Character } from "../components/Character";
 import { Icon } from "../components/Icon";
 import { OfflineBanner } from "../components/SystemState";
 import { formatTime } from "../data/agenda";
 import { firstName, type GalleryPhoto } from "../data/gallery";
-import { ROOMS, roomIndexById } from "../data/rooms";
 import "./Gallery.css";
 
 export type GalleryFilter = "semua" | "fotoku";
@@ -15,26 +13,33 @@ type Props = {
   filter: GalleryFilter;
   loading: boolean;
   offline: boolean;
+  onBack: () => void;
   onFilter: (f: GalleryFilter) => void;
   onUpload: () => void;
   onOpen: (photo: GalleryPhoto) => void;
 };
 
 /** Galeri: every photo shared by guests who are here, newest first. Anyone can download; you can delete your own. */
-export function GalleryScreen({ photos, filter, loading, offline, onFilter, onUpload, onOpen }: Props) {
+export function GalleryScreen({ photos, filter, loading, offline, onBack, onFilter, onUpload, onOpen }: Props) {
   const sorted = [...photos].sort((a, b) => b.at - a.at);
   const mine = sorted.filter((p) => p.mine);
   const shown = filter === "fotoku" ? mine : sorted;
   const authors = new Set(photos.map((p) => p.author)).size;
 
   return (
-    <div className="page__scroll screen-enter">
+    <div className="overlay-screen screen-enter">
+    <div className="page__scroll gallery">
       <header className="page__header">
-        <div className="gallery__title-row">
+        <div className="topbar">
+          <button type="button" className="icon-btn clay clay-light" onClick={onBack} aria-label="Kembali">
+            <Icon name="ArrowLeft" />
+          </button>
           <h1 className="t-display-h6 page__title">Galeri</h1>
-          <Button size="small" icon="Upload" onClick={onUpload}>
-            Unggah foto
-          </Button>
+          <span className="gallery__upload">
+            <Button size="small" icon="Upload" onClick={onUpload}>
+              Unggah foto
+            </Button>
+          </span>
         </div>
         <p className="t-p-h5 page__sub">
           {photos.length > 0 ? `${photos.length} foto dari ${authors} tamu. ` : ""}Semua tamu yang hadir bisa melihat dan mengunduhnya.
@@ -97,9 +102,6 @@ export function GalleryScreen({ photos, filter, loading, offline, onFilter, onUp
                     Disensor panitia
                   </span>
                 )}
-                <span className="gallery__tile-tag">
-                  <Badge type="room">{ROOMS[roomIndexById(p.roomId)].name}</Badge>
-                </span>
                 <span className="gallery__tile-meta">
                   <span className="t-p-h5-bold one-line">{who}</span>
                   <span className="t-p-h5">{formatTime(p.at)}</span>
@@ -125,6 +127,7 @@ export function GalleryScreen({ photos, filter, loading, offline, onFilter, onUp
           })}
         </div>
       )}
+    </div>
     </div>
   );
 }

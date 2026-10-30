@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import dragonFront from "../assets/characters/dragon-front.webp";
 import { useCharacterStage } from "../character/characterStageContext";
 import { useCharacterSprite } from "../character/useCharacterSprite";
@@ -28,6 +29,7 @@ type CharacterProps = {
  */
 export function Character({ say }: CharacterProps) {
   const sprite = useCharacterSprite();
+  const boxRef = useRef<HTMLButtonElement>(null);
   const { claim, activeSlot, status } = useCharacterStage();
   const slotRef = useRef<HTMLSpanElement>(null);
   const [line, setLine] = useState<string | null>(null);
@@ -81,13 +83,24 @@ export function Character({ say }: CharacterProps) {
   };
 
   const shown = line ?? say;
+  const anchor = useBubbleAnchor(boxRef, !!shown);
   return (
-    <button type="button" className="character" onClick={react} aria-label="Sapa karaktermu">
-      {shown && (
-        <span key={shown} className="character__bubble clay clay-light t-p-h4-bold" role="status">
-          {shown}
-        </span>
-      )}
+    <button ref={boxRef} type="button" className="character" onClick={react} aria-label="Sapa karaktermu">
+      {/*
+       * The bubble lives on <body>, above every card: inside the character
+       * it sat under the room screen's header and agenda card, which are
+       * layered above the character so its box never blocks their taps.
+       */}
+      {shown &&
+        anchor &&
+        createPortal(
+          <span className="character__bubble-anchor" style={{ left: anchor.x, top: anchor.y }}>
+            <span key={shown} className="character__bubble clay clay-light t-p-h4-bold" role="status">
+              {shown}
+            </span>
+          </span>,
+          document.body,
+        )}
       <span className="character__shadow" aria-hidden="true" />
       {/* Kept empty for React: CharacterStage appends the canvas here itself. */}
       <span ref={slotRef} className={`character__slot${is3D && bounce ? " is-bouncing" : ""}`} />
@@ -104,4 +117,40 @@ export function Character({ say }: CharacterProps) {
       )}
     </button>
   );
+}
+
+/**
+ * Where the bubble points: centred over the character, on top of its head.
+ *
+ * The head is not the top of the box. The 3D canvas is moved down so the feet
+ * meet the floor, and the scene leaves room above the horns; CharacterStage
+ * measures both and leaves the result in --head-gap on the box. Without the
+ * 3D character it is unset, and the top of the tightly cropped sprite is the
+ * head. Re-read while the bubble is up, because the measurement lands a moment
+ * after the scene does, and the page can scroll or resize under it.
+ */
+function useBubbleAnchor(box: React.RefObject<HTMLElement | null>, shown: boolean) {
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!shown) return;
+    const place = () => {
+      const el = box.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const head = parseFloat(getComputedStyle(el).getPropertyValue("--head-gap")) || 0;
+      const x = Math.round(r.left + r.width / 2);
+      const y = Math.round(r.top + head);
+      setAnchor((a) => (a && a.x === x && a.y === y ? a : { x, y }));
+    };
+    place();
+    const timer = window.setInterval(place, 500);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [box, shown]);
+  return anchor;
 }

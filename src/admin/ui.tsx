@@ -1,4 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Icon } from "../components/Icon";
 import { IconBadge, type IconTone } from "../components/IconBadge";
 import type { IconName } from "../components/iconPaths";
 
@@ -85,6 +87,77 @@ export function DataTable({
   );
 }
 
+export type RowMenuItem = { label: string; icon: IconName; onSelect: () => void; danger?: boolean };
+
+/**
+ * A row's secondary actions behind a "⋮" button, so a table row shows one
+ * main action instead of a strip of buttons that crushes the other columns.
+ *
+ * The list is portalled to <body> and placed under the button: table rows
+ * clip and scroll, and a menu inside one would be cut off at the row edge.
+ * Closes on a choice, an outside click, Escape, or the page scrolling away.
+ */
+export function RowMenu({ items, label = "Aksi lainnya" }: Readonly<{ items: RowMenuItem[]; label?: string }>) {
+  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!at) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e.type === "pointerdown" && (list.current?.contains(e.target as Node) || button.current?.contains(e.target as Node))) return;
+      setAt(null);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [at]);
+
+  if (!items.length) return null;
+  const toggle = () => {
+    if (at) return setAt(null);
+    const r = button.current?.getBoundingClientRect();
+    if (r) setAt({ top: r.bottom + 6, right: window.innerWidth - r.right });
+  };
+
+  return (
+    <>
+      <button ref={button} type="button" className="icon-btn clay clay-light row-menu__btn" aria-label={label} aria-haspopup="menu" aria-expanded={!!at} onClick={toggle}>
+        <Icon name="More" size={20} />
+      </button>
+      {at &&
+        createPortal(
+          <div ref={list} className="row-menu clay clay-light" role="menu" style={{ top: at.top, right: at.right }}>
+            {items.map((it) => (
+              <button
+                key={it.label}
+                type="button"
+                role="menuitem"
+                className={`row-menu__item t-p-h4-bold${it.danger ? " is-danger" : ""}`}
+                onClick={() => {
+                  setAt(null);
+                  it.onSelect();
+                }}
+              >
+                <Icon name={it.icon} size={18} />
+                {it.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 /** Stat strip cell: icon, label, big value, then a bar or a note (same height everywhere). */
 export function Stat({ icon, tone, label, value, of, note }: { icon: IconName; tone: IconTone; label: string; value: number | string; of?: number; note?: string }) {
   const n = typeof value === "number" ? value : 0;
@@ -156,5 +229,35 @@ export function LiveTimer({ end, now, start, endsAt, variant = "hero" }: { end: 
         <span style={{ width: `${pct}%` }} />
       </span>
     </div>
+  );
+}
+
+/** Round icon-only action (show/hide, copy) with a short hover tip; `label` is the full name screen readers hear. */
+export function IconAction({ icon, label, tip, onClick }: { icon: IconName; label: string; tip: string; onClick: () => void }) {
+  return (
+    <button type="button" className="icon-action clay clay-light" onClick={onClick} aria-label={label} data-tip={tip}>
+      <Icon name={icon} size={20} />
+    </button>
+  );
+}
+
+/** Copy button that turns into a check for a moment after copying. */
+export function CopyAction({ label = "Salin", onCopy }: { label?: string; onCopy: () => void }) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const t = window.setTimeout(() => setDone(false), 1600);
+    return () => clearTimeout(t);
+  }, [done]);
+  return (
+    <IconAction
+      icon={done ? "Check" : "Copy"}
+      label={done ? "Tersalin" : label}
+      tip={done ? "Tersalin" : "Salin"}
+      onClick={() => {
+        onCopy();
+        setDone(true);
+      }}
+    />
   );
 }

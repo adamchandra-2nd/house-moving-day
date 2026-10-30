@@ -1,34 +1,25 @@
-import { Avatar } from "./Avatar";
+import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 import "./RoomHeader.css";
 
 export type RewardState = "collecting" | "ready" | "claimed";
 
 type RoomHeaderProps = {
-  name: string;
+  /** Left side: the Notifikasi + Galeri pill (the guest can't view or edit a profile, so none is shown). */
+  start: ReactNode;
   kenalanCount: number;
   kenalanTarget: number;
   reward: RewardState;
   onKenalan?: () => void;
 };
 
-/** Figma: Room Header — profile chip on its own. */
-export function ProfileChip({ name, character }: { name: string; character?: boolean }) {
-  return (
-    <div className="room-header__chip room-header__profile glass">
-      <Avatar initial={name.charAt(0)} size="M" character={character} />
-      <span className="t-p-h4-bold">{name}</span>
-    </div>
-  );
-}
-
-/** Figma: Room Header (Type=Event) — profile chip + Kenalan progress chip (turns into a reward reminder at 5/5). */
-export function RoomHeader({ name, kenalanCount, kenalanTarget, reward, onKenalan }: RoomHeaderProps) {
+/** Figma: Room Header (Type=Event) — quick actions on the left + Kenalan progress chip (turns into a reward reminder at 5/5). */
+export function RoomHeader({ start, kenalanCount, kenalanTarget, reward, onKenalan }: RoomHeaderProps) {
   const progress = Math.min(kenalanCount / kenalanTarget, 1);
   const label = reward === "ready" ? "Hadiah!" : reward === "claimed" ? "Lengkap" : "Kenalan";
   return (
     <header className="room-header">
-      <ProfileChip name={name} character />
+      {start}
       <button
         type="button"
         className="room-header__chip room-header__kenalan clay clay-accent"

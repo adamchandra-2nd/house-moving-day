@@ -97,6 +97,13 @@
   overflow: hidden;
   background: var(--background-primary);
 }
+/* Ruangan + the pages that open over it (Galeri, Notifikasi): keeps the page toast in the phone column */
+.page--room {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+}
 .page__scroll {
   height: 100%;
   overflow-y: auto;
@@ -156,7 +163,8 @@
   top: max(var(--padding-mid-medium), env(safe-area-inset-top));
   left: var(--padding-mid-medium);
   right: var(--padding-mid-medium);
-  z-index: 4;
+  /* Above full-screen overlays (Galeri, photo viewer), below dialogs' scrim */
+  z-index: 18;
 }
 
 /* Screen-to-screen transition */

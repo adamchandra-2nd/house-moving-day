@@ -12,7 +12,6 @@ export type GalleryPhoto = {
   mine: boolean;
   /** Rundown minute it was shared. */
   at: number;
-  roomId: string;
   caption?: string;
   /** Blurred by the committee: other guests can't open or download it. */
   censored?: boolean;
@@ -41,12 +40,12 @@ const room = (i: number) => ROOMS[i];
 
 /** Sample feed until uploads go to the backend. Room illustrations stand in for guests' photos. */
 export const SAMPLE_PHOTOS: GalleryPhoto[] = [
-  { id: "p1", src: room(4).image, author: "Nanda", mine: false, at: 9 * 60 + 48, roomId: room(4).id, caption: "Talkshow-nya rame banget!" },
-  { id: "p2", src: room(1).image, author: "David", mine: true, at: 9 * 60 + 41, roomId: room(1).id, caption: "Meja baru, semangat baru." },
-  { id: "p3", src: room(3).image, author: "Sinta Maharani", mine: false, at: 9 * 60 + 36, roomId: room(3).id },
-  { id: "p4", src: room(0).image, author: "Azwar", mine: false, at: 9 * 60 + 22, roomId: room(0).id, caption: "Pintu keycard-nya keren." },
-  { id: "p5", src: room(2).image, author: "Raka Pratama", mine: false, at: 9 * 60 + 18, roomId: room(2).id },
-  { id: "p6", src: room(4).image, author: "Laras Ayuningtyas", mine: false, at: 9 * 60 + 12, roomId: room(4).id, caption: "Omakase corner!" },
+  { id: "p1", src: room(4).image, author: "Nanda", mine: false, at: 9 * 60 + 48, caption: "Talkshow-nya rame banget!" },
+  { id: "p2", src: room(1).image, author: "David", mine: true, at: 9 * 60 + 41, caption: "Meja baru, semangat baru." },
+  { id: "p3", src: room(3).image, author: "Sinta Maharani", mine: false, at: 9 * 60 + 36 },
+  { id: "p4", src: room(0).image, author: "Azwar", mine: false, at: 9 * 60 + 22, caption: "Pintu keycard-nya keren." },
+  { id: "p5", src: room(2).image, author: "Raka Pratama", mine: false, at: 9 * 60 + 18 },
+  { id: "p6", src: room(4).image, author: "Laras Ayuningtyas", mine: false, at: 9 * 60 + 12, caption: "Omakase corner!" },
 ];
 
 /** Review cases: photos "picked" from the gallery without a real file dialog. */

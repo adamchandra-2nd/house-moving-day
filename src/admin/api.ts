@@ -157,6 +157,10 @@ export const adminApi = {
   sendAnnouncement: (a: { title: string; body: string; roomId: string | null }) =>
     request<Announcement>("/api/admin/announcements", { method: "POST", token: loadSession(), body: a }),
 
+  /** Guests stop seeing it too: the server no longer returns it to them. 404 if it is already gone. */
+  deleteAnnouncement: (id: string) =>
+    request<void>(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "DELETE", token: loadSession() }),
+
   people: () => request<AdminPerson[]>("/api/admin/people", { token: loadSession() }),
 
   /** The server mints the id; it is what the personal stage link carries. */

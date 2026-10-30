@@ -2,7 +2,7 @@ import type { AgendaItem } from "./agenda";
 import type { Guest } from "./guests";
 import type { AskedQuestion } from "./questions";
 import type { Outfit } from "./outfits";
-import { newIdempotencyKey, request } from "./http";
+import { API_URL, newIdempotencyKey, request } from "./http";
 import { loadToken } from "../guest/session";
 
 /**
@@ -73,6 +73,25 @@ export const announcementKey = (a: GuestAnnouncement) => `${a.id}@${a.at}`;
 export const announcementSub = (a: GuestAnnouncement) =>
   a.source ? `${a.body} · dari ${a.source === "mc" ? "MC" : "panitia"}` : a.body;
 
+/**
+ * "Ajak kenalan": one guest letting another know they would like to meet.
+ * Deliberately without a place -- the room a guest is looking at in the app
+ * is not necessarily the one they are standing in.
+ */
+export type KenalanInvite = {
+  id: string;
+  fromId: string;
+  fromName: string;
+  toId: string;
+  /** Rundown minute, for Notifikasi. */
+  at: number;
+  /** Unix ms, for the sender's 10-minute "Ajak lagi" cooldown. */
+  sentAt: number;
+};
+
+/** GET /api/kenalan/invites: received newest first, sent as the latest one per guest. */
+export type KenalanInvites = { received: KenalanInvite[]; sent: KenalanInvite[] };
+
 /** The public half of Invite: what is written on the invitation anyway. */
 export type PublicEvent = Invite["event"] & { countdown: boolean };
 
@@ -89,7 +108,23 @@ export const api = {
 
   invite: (): Promise<Invite> => request("/api/invite", { token: token() }),
 
-  guests: (): Promise<Guest[]> => request("/api/guests", { token: token() }),
+  /**
+   * Who is here. A guest with an uploaded character comes with the URL of its
+   * picture: versioned by spriteAt, so it caches hard and a new upload is a
+   * new URL. The token rides in the query because an <img> cannot send a
+   * header, the same as gallery photos.
+   */
+  guests: async (): Promise<Guest[]> => {
+    const list = await request<(Guest & { spriteAt?: number })[]>("/api/guests", { token: token() });
+    const t = encodeURIComponent(token() ?? "");
+    return list.map(({ spriteAt, ...g }) =>
+      spriteAt ? { ...g, sprite: `${API_URL}/api/guests/${encodeURIComponent(g.id)}/sprite?t=${t}&v=${spriteAt}` } : g,
+    );
+  },
+
+  /** The picture of this guest's character, for everybody else's kenalan cards. */
+  uploadSprite: (dataUrl: string) =>
+    request<void>("/api/invite/sprite", { method: "PUT", token: token(), body: { data: dataUrl } }),
   /**
    * The rundown. The server sends sessions (with PIC, speaker, Q&A switch);
    * the guest screens only need the agenda half plus the Q&A switch, so that
@@ -102,6 +137,18 @@ export const api = {
   questions: (): Promise<AskedQuestion[]> => request("/api/questions", { token: token() }),
   cards: (): Promise<Card[]> => request("/api/cards", { token: token() }),
   announcements: (): Promise<GuestAnnouncement[]> => request("/api/announcements", { token: token() }),
+  kenalanInvites: async (): Promise<KenalanInvites> => {
+    const r = await request<Partial<KenalanInvites> | null>("/api/kenalan/invites", { token: token() });
+    return { received: r?.received ?? [], sent: r?.sent ?? [] };
+  },
+
+  /**
+   * Not idempotency-keyed and not queued offline: the server's 10-minute
+   * cooldown already refuses a repeat (409), and an invite that arrives an
+   * hour late, after the guest has left the room, is worse than none.
+   */
+  inviteKenalan: (guestId: string): Promise<KenalanInvite> =>
+    request("/api/kenalan/invites", { method: "POST", token: token(), body: { guestId } }),
 
   setRsvp: (rsvp: "ya" | "tidak") =>
     request<{ rsvp: string }>("/api/invite/rsvp", { method: "POST", token: token(), body: { rsvp } }),
@@ -227,6 +274,7 @@ export const queryKeys = {
   invite: ["invite"] as const,
   cards: ["cards"] as const,
   announcements: ["announcements"] as const,
+  kenalanInvites: ["kenalanInvites"] as const,
 };
 
 /** Mutation keys are stable strings so paused mutations survive a reload. */

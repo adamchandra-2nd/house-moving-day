@@ -9,9 +9,19 @@ import { SystemState } from "../components/SystemState";
 import { Toast, ToastIcon } from "../components/Toast";
 import { KENALAN_TARGET } from "../config";
 import { currentItem, eventEndedAt, formatTime, hasQna, useAgenda, type AgendaItem } from "../data/agenda";
-import { announcementKey as seenKey, announcementSub, api, queryKeys, type GuestAnnouncement } from "../data/adapters";
-import { GALLERY_MAX, PHOTO_MAX_MB, type GalleryPhoto, type PickedPhoto } from "../data/gallery";
-import { GUESTS } from "../data/guests";
+import {
+  announcementKey as seenKey,
+  announcementSub,
+  api,
+  queryKeys,
+  type GuestAnnouncement,
+  type KenalanInvite,
+  type KenalanInvites,
+} from "../data/adapters";
+import { GALLERY_MAX, PHOTO_MAX_MB, SAMPLE_PHOTOS, firstName, type GalleryPhoto, type PickedPhoto } from "../data/gallery";
+import { GUESTS, type Guest } from "../data/guests";
+import { ApiError } from "../data/http";
+import { addNotices, photosNotice, type GuestNotice } from "../data/notifications";
 import { photosApi, shrink } from "../data/photos";
 import {
   useAnnouncementsQuery,
@@ -21,11 +31,12 @@ import {
   useEventFeedback,
   useFinalFeedback,
   useGuests,
+  useKenalanInvitesQuery,
   useSendQuestion,
 } from "../data/queries";
 import { queryClient } from "../data/queryClient";
 import { ROOMS, roomIndexById } from "../data/rooms";
-import { FLOW, INVITE_PATH, TABS, tabPath } from "../routing/paths";
+import { FLOW, INVITE_PATH, SCREENS, TABS, tabPath, type AppScreen } from "../routing/paths";
 import { AgendaScreen } from "../screens/AgendaScreen";
 import { AskScreen } from "../screens/AskScreen";
 import { CheckIn } from "../screens/CheckIn";
@@ -42,6 +53,7 @@ import { UploadScreen } from "../screens/UploadScreen";
 import { MainArea } from "../screens/MainArea";
 import { MyQr } from "../screens/MyQr";
 import { Narasi } from "../screens/Narasi";
+import { NotificationsScreen } from "../screens/NotificationsScreen";
 import { QuestionCard } from "../screens/QuestionCard";
 import { Rsvp } from "../screens/Rsvp";
 import { Start } from "../screens/Start";
@@ -50,6 +62,7 @@ import { Voucher } from "../screens/Voucher";
 import { CharacterStage } from "../character/CharacterStage";
 import { GuestProvider } from "./GuestProvider";
 import { useGuest } from "./guestContext";
+import { ANNOUNCEMENT_GRACE_MIN, useLogNotices, useNoticeSync } from "./useNotices";
 
 /** Provider + the system-state gate that used to sit at the top of App.tsx. */
 export function GuestShell() {
@@ -61,9 +74,6 @@ export function GuestShell() {
     </GuestProvider>
   );
 }
-
-/** How far before a guest arrived an announcement still shows to them, in minutes. */
-const ANNOUNCEMENT_GRACE_MIN = 30;
 
 /**
  * One Spline instance for every guest screen, inside the provider so it can
@@ -216,7 +226,10 @@ export function CustomizeRoute() {
 
 export function AppRoute() {
   const { tab } = useParams<{ tab: string }>();
-  const { state, set, toast, showToast, demo } = useGuest();
+  const { state, set, update, toast, showToast, demo, session } = useGuest();
+  const liveSession = !demo && Boolean(session);
+  // Galeri and Notifikasi open full screen over Ruangan; every other path is a tab.
+  const screen = (SCREENS as readonly string[]).includes(tab ?? "") ? (tab as AppScreen) : null;
   const navigate = useNavigate();
   // Review cases use the sample guests; a real guest sees who is actually
   // here, minus themselves -- their own card is not one to collect.
@@ -226,6 +239,8 @@ export function AppRoute() {
   // committee edits the rundown.
   const agenda = useAgenda();
   const announcements = useAnnouncementsQuery(!demo);
+  const kenalanInvites = useKenalanInvitesQuery(liveSession);
+  const logNotices = useLogNotices();
 
   const sendQuestion = useSendQuestion();
   const editQuestion = useEditQuestion();
@@ -243,6 +258,20 @@ export function AppRoute() {
     (next: NavTab) => {
       set({ overlay: null });
       navigate(tabPath(next));
+    },
+    [navigate, set],
+  );
+
+  const openGallery = useCallback(() => {
+    set({ overlay: null, newPhotos: false });
+    navigate(tabPath("galeri"));
+  }, [navigate, set]);
+
+  // A Kenalan card opens on the Kenalan tab, where it is at home (from "Lihat kartu" or Notifikasi).
+  const openGuest = useCallback(
+    (id: string) => {
+      set({ overlay: { type: "guest", id } });
+      navigate(tabPath("kenalan"));
     },
     [navigate, set],
   );
@@ -280,36 +309,76 @@ export function AppRoute() {
    * Above the early returns below: hooks after a conditional return made
    * React throw "rendered more hooks" when moving from Ruangan to another tab.
    *
-   * Loaded when the tab is first opened, then the list (not the images) is
-   * re-read every 20 s while it stays open, so new photos and the committee's
-   * censoring show up. The images themselves are cached by the browser for a
-   * day -- a photo's bytes never change, since an edit is a new photo.
+   * The list (not the images) is re-read every 20 s while Galeri is open, so
+   * new photos and the committee's censoring show up, and every minute
+   * otherwise, which is what lights the dot on the Galeri button and logs
+   * "X membagikan foto" in Notifikasi. The images themselves are cached by the
+   * browser for a day -- a photo's bytes never change, since an edit is a new
+   * photo, and nothing but the open gallery loads them.
    */
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [galleryFilter, setGalleryFilter] = useState<GalleryFilter>("semua");
   const loadedGallery = useRef(false);
+  const galleryOpen = screen === "galeri";
+
+  // However Galeri was reached (the pill, a notice, a bookmarked /app/galeri), its dot is seen.
+  useEffect(() => {
+    if (galleryOpen && state.newPhotos) set({ newPhotos: false });
+  }, [galleryOpen, state.newPhotos, set]);
 
   useEffect(() => {
-    if (tab !== "galeri") return;
-    if (!loadedGallery.current) {
-      loadedGallery.current = true;
-      setPhotosLoading(true);
+    if (demo) {
+      setPhotos(SAMPLE_PHOTOS);
+      return;
+    }
+    if (!liveSession) return;
+    let alive = true;
+    const load = () => {
+      const first = !loadedGallery.current;
+      if (first && galleryOpen) setPhotosLoading(true);
       void photosApi
         .list()
-        .then(setPhotos)
-        .catch(() => {
-          // The screen has its own offline state; an empty list with that shown
-          // reads correctly.
-          loadedGallery.current = false;
+        .then((list) => {
+          if (!alive) return;
+          loadedGallery.current = true;
+          setPhotos(list);
+          noticeNewPhotos(list, galleryOpen);
         })
-        .finally(() => setPhotosLoading(false));
-    }
-    if (demo) return;
-    // A failed poll keeps the list on screen; the next one tries again.
-    const timer = window.setInterval(() => void photosApi.list().then(setPhotos).catch(() => undefined), 20_000);
-    return () => clearInterval(timer);
-  }, [tab, demo]);
+        // A failed poll keeps the list on screen; the next one tries again. The
+        // screen has its own offline state, so an empty first load reads right.
+        .catch(() => undefined)
+        .finally(() => first && setPhotosLoading(false));
+    };
+    load();
+    const timer = window.setInterval(load, galleryOpen ? 20_000 : 60_000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galleryOpen, demo, liveSession]);
+
+  /**
+   * Other guests' photos this phone has not seen in a poll before. The very
+   * first poll only records what is there: a full gallery on arrival is not news.
+   */
+  const noticeNewPhotos = (list: GalleryPhoto[], open: boolean) =>
+    update((s) => {
+      const ids = list.map((p) => p.id);
+      if (!s.knownPhotos) return { knownPhotos: ids };
+      const known = new Set(s.knownPhotos);
+      const added = list.filter((p) => !p.mine && !known.has(p.id)).sort((a, b) => b.at - a.at);
+      const same = ids.length === s.knownPhotos.length && ids.every((id) => known.has(id));
+      if (!added.length) return same ? null : { knownPhotos: ids };
+      const notice = photosNotice(added, s.now);
+      return {
+        knownPhotos: ids,
+        // Looking at Galeri already: no dot, and the notice is logged read.
+        newPhotos: open ? s.newPhotos : true,
+        notices: notice ? addNotices(s.notices, [notice], open) : s.notices,
+      };
+    });
 
   /**
    * Photos come from the phone's library only -- no `capture`, so the app
@@ -343,6 +412,17 @@ export function AppRoute() {
       if (!note) continue;
       set({ changedId: item.id });
       setRundownNotices((list) => [...list, { id: `rundown-${item.id}`, title: "Rundown berubah", body: note, roomId: null, at: state.now }]);
+      logNotices([
+        {
+          // One per resulting slot, so moving it twice is two notices and a re-poll is none.
+          id: `rundown-${item.id}-${item.start}-${item.end}-${item.roomId}`,
+          kind: "jadwal",
+          title: "Rundown berubah",
+          body: note,
+          at: state.now,
+          target: { to: "agenda" },
+        },
+      ]);
       return;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -367,14 +447,63 @@ export function AppRoute() {
     () => set({ seenAnnouncements: [...state.seenAnnouncements, ...unseenIds.split(",").filter(Boolean)] }),
     [set, state.seenAnnouncements, unseenIds],
   );
+  // On the bare room it's the room's own toast (with "Ke sana" / "Lihat kartu");
+  // anywhere else -- a tab, Galeri, Notifikasi, an open card -- the page toast.
+  const bareRoom = tab === "ruangan" && !state.overlay;
   useEffect(() => {
-    if (!announcement || tab === "ruangan") return;
+    if (!announcement || bareRoom) return;
     showToast({ icon: "Megaphone", title: announcement.title, sub: announcementSub(announcement) });
     markAnnouncementSeen();
-  }, [announcement, tab, showToast, markAnnouncementSeen]);
+  }, [announcement, bareRoom, showToast, markAnnouncementSeen]);
 
-  if (!tab || !TABS.includes(tab as NavTab)) return <Navigate to={tabPath("ruangan")} replace />;
-  const activeTab = tab as NavTab;
+  /**
+   * Another guest's "Ajak kenalan": logged in Notifikasi by useNoticeSync,
+   * which hands over a recent one to pop up as well.
+   */
+  const [incomingInvite, setIncomingInvite] = useState<KenalanInvite | undefined>();
+  useNoticeSync({
+    live: liveSession,
+    announcements,
+    invites: kenalanInvites,
+    onInvite: (inv) => {
+      if (bareRoom) return setIncomingInvite(inv);
+      const name = firstName(inv.fromName);
+      showToast({ icon: "UserPlus", title: `${name} ngajak kenalan!`, sub: `Cari ${name}, lalu kalian bisa saling tanya.` });
+    },
+  });
+
+  /** "Ajak kenalan" on a card. Review cases only pretend; live, the server holds the 10-minute cooldown. */
+  const [inviting, setInviting] = useState(false);
+  const inviteGuest = async (g: Guest) => {
+    const sent = { icon: "UserPlus" as const, title: `Ajakan terkirim ke ${g.name}`, sub: `Cari ${g.name}, lalu tanyakan pertanyaan di kartunya.` };
+    if (demo) {
+      set({ invited: { ...state.invited, [g.id]: Date.now() } });
+      return showToast(sent);
+    }
+    setInviting(true);
+    try {
+      const inv = await api.inviteKenalan(g.id);
+      queryClient.setQueryData<KenalanInvites>(queryKeys.kenalanInvites, (d) => ({
+        received: d?.received ?? [],
+        sent: [inv, ...(d?.sent ?? []).filter((x) => x.toId !== inv.toId)],
+      }));
+      showToast(sent);
+    } catch (e) {
+      // The server's own words for a refusal (asked < 10 minutes ago, already
+      // left); a network failure gets the usual line.
+      const answered = e instanceof ApiError && e.status !== 0;
+      showToast({ icon: answered ? "Clock" : "WifiOff", title: "Ajakan belum terkirim", sub: answered ? e.message : "Cek koneksimu lalu coba lagi." });
+      // A 409 means this phone missed an invite it sent: fetch it for the cooldown.
+      if (answered) void queryClient.invalidateQueries({ queryKey: queryKeys.kenalanInvites });
+    } finally {
+      setInviting(false);
+    }
+  };
+  const invitedAt = (guestId: string) =>
+    demo ? state.invited[guestId] : kenalanInvites?.sent.find((x) => x.toId === guestId)?.sentAt;
+
+  if (!tab || !(TABS.includes(tab as NavTab) || screen)) return <Navigate to={tabPath("ruangan")} replace />;
+  const activeTab: NavTab = screen ? "ruangan" : (tab as NavTab);
 
   const overlay = state.overlay;
   const askEvent = overlay?.type === "ask" ? agenda.find((a) => a.id === overlay.eventId) : undefined;
@@ -437,32 +566,6 @@ export function AppRoute() {
     );
   }
 
-  if (activeTab === "ruangan") {
-    return (
-      <>
-        <MainArea
-          name={state.name}
-          kenalanCount={count}
-          reward={reward}
-          roomIndex={state.roomIndex}
-          onRoomChange={onRoomChange}
-          onTab={onTab}
-          now={state.now}
-          ended={ended}
-          offline={state.offline}
-          scenario={state.mainScenario}
-          onScenarioPlayed={onScenarioPlayed}
-          announcement={announcement}
-          onAnnouncementShown={markAnnouncementSeen}
-          onOpenReward={openReward}
-          onAsk={canAsk ? openAsk : undefined}
-          feedbackSent={state.feedbackSent}
-        />
-        {askScreen}
-      </>
-    );
-  }
-
   /**
    * Shares the picked photos, shrinking each one first.
    *
@@ -476,10 +579,11 @@ export function AppRoute() {
       const file = pick.file;
       if (!file) continue;
       const data = await shrink(file);
-      added.push(await photosApi.share(data, pick.caption, ROOMS[state.roomIndex].id));
+      added.push(await photosApi.share(data, pick.caption));
     }
     setPhotos((list) => [...added, ...list]);
     set({ overlay: null });
+    if (!galleryOpen) navigate(tabPath("galeri"));
     showToast({ icon: "Check", title: `${added.length} foto dibagikan`, sub: "Tamu lain bisa melihatnya di Galeri." });
   };
 
@@ -523,6 +627,127 @@ export function AppRoute() {
 
   const guest = overlay?.type === "guest" ? guests.find((g) => g.id === overlay.id) : undefined;
 
+  // Tapping a notification marks it read and goes where it points.
+  const openNotice = (n: GuestNotice) => {
+    const notices = state.notices.map((x) => (x.id === n.id ? { ...x, read: true } : x));
+    const t = n.target;
+    if (!t) return set({ notices });
+    const go = (path: Parameters<typeof tabPath>[0], patch: Partial<typeof state>) => {
+      set({ notices, ...patch });
+      navigate(tabPath(path));
+    };
+    if (t.to === "agenda") return go("agenda", { overlay: null });
+    if (t.to === "galeri") return go("galeri", { overlay: null, newPhotos: false });
+    if (t.to === "voucher") return go("kenalan", { overlay: { type: "voucher" } });
+    // A guest who has since left has no card: the Kenalan tab is the closest thing.
+    if (t.to === "kartu") return go("kenalan", { overlay: { type: "guest", id: t.guestId } });
+    if (t.to === "tanya") return go("ruangan", { overlay: { type: "ask", eventId: t.eventId } });
+    const roomIndex = roomIndexById(t.roomId);
+    go("ruangan", { overlay: null, roomIndex, visited: [...new Set([...state.visited, roomIndex])] });
+  };
+
+  // Layers shared by Ruangan and the tab pages: full-screen pages, overlays and the page toast.
+  const layers = (
+    <>
+      {screen === "galeri" && (
+        <GalleryScreen
+          photos={photos}
+          filter={galleryFilter}
+          loading={photosLoading}
+          offline={state.offline}
+          onBack={() => navigate(tabPath("ruangan"))}
+          onFilter={setGalleryFilter}
+          onUpload={photoPicker.open}
+          onOpen={(p) => set({ overlay: { type: "photo", id: p.id } })}
+        />
+      )}
+      {screen === "notifikasi" && (
+        <NotificationsScreen
+          notices={state.notices}
+          onBack={() => navigate(tabPath("ruangan"))}
+          onReadAll={() => set({ notices: state.notices.map((n) => (n.read ? n : { ...n, read: true })) })}
+          onOpen={openNotice}
+        />
+      )}
+      {guest && (
+        <QuestionCard
+          key={guest.id}
+          guest={guest}
+          savedNote={state.collected[guest.id]}
+          onBack={closeOverlay}
+          onCollected={(note) => collect(guest.id, note)}
+          invitedAt={invitedAt(guest.id)}
+          inviting={inviting}
+          onInvite={() => void inviteGuest(guest)}
+        />
+      )}
+      {overlay?.type === "voucher" && (
+        <Voucher name={state.name} claimed={state.rewardClaimed} onBack={closeOverlay} onClaimed={() => set({ rewardClaimed: true })} />
+      )}
+      {askScreen}
+      {photoPicker.input}
+      {overlay?.type === "photo" && (
+        <PhotoViewer
+          photos={photos}
+          startId={overlay.id}
+          confirmDelete={overlay.confirmDelete}
+          onClose={closeOverlay}
+          onDownload={downloadPhoto}
+          onDelete={deletePhoto}
+        />
+      )}
+      {overlay?.type === "upload" && (
+        <UploadScreen initial={overlay.initial} offline={state.offline} onBack={closeOverlay} onShared={sharePhotos} />
+      )}
+      {overlay?.type === "myqr" && <MyQr name={state.name} code={state.code} onClose={closeOverlay} />}
+      {overlay?.type === "reward" && <RewardDialog onClose={closeOverlay} onExchange={() => set({ overlay: { type: "voucher" } })} />}
+
+      {toast && (
+        <div className="page__toast">
+          <Toast
+            lead={<ToastIcon icon={toast.icon} tone={ACCENT_TOASTS.includes(toast.icon) ? "accent" : "neutral"} />}
+            title={toast.title}
+            sub={toast.sub}
+          />
+        </div>
+      )}
+    </>
+  );
+
+  if (activeTab === "ruangan") {
+    return (
+      <div className="page--room">
+        <MainArea
+          kenalanCount={count}
+          reward={reward}
+          roomIndex={state.roomIndex}
+          onRoomChange={onRoomChange}
+          onTab={onTab}
+          now={state.now}
+          ended={ended}
+          offline={state.offline}
+          scenario={state.mainScenario}
+          onScenarioPlayed={onScenarioPlayed}
+          // Only on the bare room; anywhere else the page toast says it (see above).
+          announcement={bareRoom ? announcement : undefined}
+          onAnnouncementShown={markAnnouncementSeen}
+          kenalanInvite={incomingInvite}
+          onKenalanInviteShown={() => setIncomingInvite(undefined)}
+          onOpenGuest={openGuest}
+          newPhotos={state.newPhotos}
+          onGallery={openGallery}
+          unread={state.notices.filter((n) => !n.read).length}
+          onNotifications={() => navigate(tabPath("notifikasi"))}
+          onNotice={(n) => logNotices([n])}
+          onOpenReward={openReward}
+          onAsk={canAsk ? openAsk : undefined}
+          feedbackSent={state.feedbackSent}
+        />
+        {layers}
+      </div>
+    );
+  }
+
   return (
     <main className="page">
       {activeTab === "agenda" && (
@@ -546,17 +771,6 @@ export function AppRoute() {
           onOpenGuest={(g) => set({ overlay: { type: "guest", id: g.id } })}
           onMyQr={() => set({ overlay: { type: "myqr" } })}
           onReward={() => set({ overlay: { type: "voucher" } })}
-        />
-      )}
-      {activeTab === "galeri" && (
-        <GalleryScreen
-          photos={photos}
-          filter={galleryFilter}
-          loading={photosLoading}
-          offline={state.offline}
-          onFilter={setGalleryFilter}
-          onUpload={photoPicker.open}
-          onOpen={(p) => set({ overlay: { type: "photo", id: p.id } })}
         />
       )}
       {activeTab === "feedback" && (
@@ -585,55 +799,13 @@ export function AppRoute() {
           }
         />
       </div>
-
-      {guest && (
-        <QuestionCard
-          key={guest.id}
-          guest={guest}
-          savedNote={state.collected[guest.id]}
-          onBack={closeOverlay}
-          onCollected={(note) => collect(guest.id, note)}
-        />
-      )}
-      {overlay?.type === "voucher" && (
-        <Voucher name={state.name} claimed={state.rewardClaimed} onBack={closeOverlay} onClaimed={() => set({ rewardClaimed: true })} />
-      )}
-      {askScreen}
-      {photoPicker.input}
-      {overlay?.type === "photo" && (
-        <PhotoViewer
-          photos={photos}
-          startId={overlay.id}
-          confirmDelete={overlay.confirmDelete}
-          onClose={closeOverlay}
-          onDownload={downloadPhoto}
-          onDelete={deletePhoto}
-        />
-      )}
-      {overlay?.type === "upload" && (
-        <UploadScreen
-          initial={overlay.initial}
-          roomName={ROOMS[state.roomIndex].name}
-          offline={state.offline}
-          onBack={closeOverlay}
-          onShared={sharePhotos}
-        />
-      )}
-      {overlay?.type === "myqr" && <MyQr name={state.name} code={state.code} onClose={closeOverlay} />}
-      {overlay?.type === "reward" && <RewardDialog onClose={closeOverlay} onExchange={() => set({ overlay: { type: "voucher" } })} />}
-
-      {toast && (
-        <div className="page__toast">
-          <Toast
-            lead={<ToastIcon icon={toast.icon} tone={toast.icon === "Check" ? "accent" : "neutral"} />}
-            title={toast.title}
-            sub={toast.sub}
-          />
-        </div>
-      )}
+      {layers}
     </main>
   );
 }
+
+/** Page toasts that carry good news (or the committee's voice) get the orange icon. */
+const ACCENT_TOASTS: string[] = ["Check", "Megaphone", "UserPlus"];
 
 /** One line on what moved, for the "Rundown berubah" notice; null when nothing a guest sees did. */
 function describeChange(old: AgendaItem, item: AgendaItem): string | null {

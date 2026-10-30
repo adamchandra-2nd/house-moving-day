@@ -1,5 +1,6 @@
 /* ---------- Galeri tab ---------- */
-.gallery__title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-small); }
+.gallery { padding-bottom: max(var(--padding-extra-large), env(safe-area-inset-bottom)); }
+.gallery__upload { margin-left: auto; }
 .gallery__filters { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-extra-small); }
 .gallery__filter {
   height: 40px;
@@ -22,10 +23,6 @@
 }
 .gallery__tile:active { transform: scale(0.98); }
 .gallery__tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.gallery__tile-tag { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; }
-.gallery__tile-tag .badge { max-width: 100%; padding: 0 var(--padding-medium) 0 var(--padding-small); gap: 4px; }
-.gallery__tile-tag .badge svg { flex: none; }
-.gallery__tile-tag .badge > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .gallery__tile-meta {
   position: absolute;
   left: 0;
@@ -123,8 +120,6 @@
   color: var(--text-grey-100);
   line-height: 1.45;
 }
-.upload__where { display: flex; align-items: center; gap: var(--spacing-extra-small); }
-.upload__where-label { color: var(--text-grey-300); }
 .upload__privacy { display: flex; gap: var(--spacing-extra-small); margin: 0; color: var(--text-grey-300); line-height: 1.45; }
 .upload__privacy svg { flex: none; }
 .upload__bottom { flex-direction: column; align-items: center; gap: var(--spacing-extra-small); }

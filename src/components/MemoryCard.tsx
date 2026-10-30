@@ -1,4 +1,5 @@
 import dragonFront from "../assets/characters/dragon-front.webp";
+import { useCharacterSprite } from "../character/useCharacterSprite";
 import { useEvent } from "../data/eventContext";
 import "./MemoryCard.css";
 
@@ -7,6 +8,8 @@ type Props = { name: string; kenalanCount: number; roomsVisited: number };
 /** Figma: Memory Card — story-sized keepsake to share on Instagram. */
 export function MemoryCard({ name, kenalanCount, roomsVisited }: Props) {
   const EVENT = useEvent();
+  // The character this guest made, not the bundled one: it is their keepsake.
+  const sprite = useCharacterSprite();
   return (
     <figure className="memory-card clay clay-accent" aria-label={`Memory card ${name}`}>
       <div className="memory-card__head">
@@ -15,7 +18,7 @@ export function MemoryCard({ name, kenalanCount, roomsVisited }: Props) {
       </div>
       <span className="memory-card__title">{EVENT.name}</span>
       <div className="memory-card__stage">
-        <img src={dragonFront} alt="" />
+        <img src={sprite ?? dragonFront} alt="" />
       </div>
       <figcaption className="memory-card__foot">
         <span className="memory-card__name">{name}</span>

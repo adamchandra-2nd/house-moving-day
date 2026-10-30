@@ -63,6 +63,14 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<string | null>(() => loadToken());
 
   const set = useCallback((patch: Partial<GuestState>) => setState((s) => ({ ...s, ...patch })), []);
+  const update = useCallback(
+    (fn: (s: GuestState) => Partial<GuestState> | null) =>
+      setState((s) => {
+        const patch = fn(s);
+        return patch ? { ...s, ...patch } : s;
+      }),
+    [],
+  );
 
   const showToast = useCallback((t: PageToast) => {
     clearTimeout(toastTimer.current);
@@ -294,8 +302,8 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<GuestContextValue>(
-    () => ({ state, set, toast, showToast, demo, session, startSession }),
-    [state, set, toast, showToast, demo, session, startSession],
+    () => ({ state, set, update, toast, showToast, demo, session, startSession }),
+    [state, set, update, toast, showToast, demo, session, startSession],
   );
 
   return (

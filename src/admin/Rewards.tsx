@@ -8,7 +8,7 @@ import { TextField } from "../components/TextField";
 import { formatTime } from "../data/agenda";
 import type { AdminGuest } from "./data";
 import { VoucherBox } from "./Guests";
-import { DataTable, Empty, Panel, Stat } from "./ui";
+import { DataTable, Empty, IconAction, Panel, Stat } from "./ui";
 
 type Props = { guests: AdminGuest[]; pin: string; changedAt: number; onClaim: (id: string) => void; onChangePin: (pin: string) => void };
 
@@ -80,9 +80,7 @@ export function Rewards({ guests, pin, changedAt, onClaim, onChangePin }: Props)
             <span className="t-p-h5 akses-hero__note">Dipakai panitia di HP tamu untuk menandai voucher sudah ditukar.</span>
             <CodeBoxes code={pin} hidden={!showPin} />
             <div className="akses-hero__actions">
-              <Button size="small" style="tertiary" icon="Eye" onClick={() => setShowPin(!showPin)}>
-                {showPin ? "Sembunyi" : "Tampilkan"}
-              </Button>
+              <IconAction icon={showPin ? "EyeOff" : "Eye"} label={showPin ? "Sembunyikan PIN" : "Tampilkan PIN"} tip={showPin ? "Sembunyikan" : "Tampilkan"} onClick={() => setShowPin(!showPin)} />
               <Button size="small" style="primary" icon="Pencil" onClick={() => setChanging(true)}>
                 Ganti PIN
               </Button>

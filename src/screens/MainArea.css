@@ -75,3 +75,53 @@
 /* Overlapping avatars in the group-arrival toast */
 .avatar-stack { display: inline-flex; flex: none; }
 .avatar-stack > * + * { margin-left: calc(var(--spacing-small) * -1); }
+
+/* Notifikasi + Galeri: Ink pill at the top-left, same height as the Kenalan chip */
+.main-area__quick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-extra-small);
+  padding: 4px;
+  border-radius: var(--radius-infinite);
+  background: var(--ink);
+}
+.main-area__quick-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-infinite);
+  background: var(--text-grey-100);
+  color: var(--text-inverse);
+  transition: transform 120ms ease;
+}
+.main-area__quick-btn:active { transform: scale(0.94); }
+.main-area__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: var(--radius-infinite);
+  background: var(--orange-splash);
+  color: var(--text-on-accent);
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.main-area__dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-infinite);
+  background: var(--orange-splash);
+  box-shadow: 0 0 0 2px var(--text-grey-100);
+}

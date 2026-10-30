@@ -3,6 +3,7 @@ import { Button } from "../components/Button";
 import { Dialog } from "../components/Dialog";
 import { Icon } from "../components/Icon";
 import { Scanner, type ScanState } from "../components/Scanner";
+import { DOOR_VIDEO } from "./DoorOpen";
 import { TextField } from "../components/TextField";
 import { ROOMS } from "../data/rooms";
 import "./CheckIn.css";
@@ -116,6 +117,12 @@ export function CheckIn({ name, scenario, onBack, onCheckedIn, camera = false, d
     },
     [accept],
   );
+
+  // The door video (3 MB) plays the moment check-in succeeds: fetch it while
+  // the guest is still lining up the QR, so it is in the cache by then.
+  useEffect(() => {
+    void fetch(DOOR_VIDEO).catch(() => undefined);
+  }, []);
 
   // Arrived from the door QR via the phone camera: no scanning left to do.
   const linked = useRef(false);

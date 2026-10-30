@@ -26,9 +26,17 @@ export type FlowStage = keyof typeof FLOW;
  */
 export const INVITE_PATH = "/u/:token";
 
-export const TABS: NavTab[] = ["ruangan", "agenda", "kenalan", "galeri", "feedback"];
+export const TABS: NavTab[] = ["ruangan", "agenda", "kenalan", "feedback"];
 
-export const tabPath = (tab: NavTab) => `/app/${tab}`;
+/**
+ * Full-screen pages that open over Ruangan rather than being a tab: Galeri
+ * (from the pill on Ruangan; it used to be a tab, so /app/galeri still works)
+ * and Notifikasi (the bell).
+ */
+export const SCREENS = ["galeri", "notifikasi"] as const;
+export type AppScreen = (typeof SCREENS)[number];
+
+export const tabPath = (tab: NavTab | AppScreen) => `/app/${tab}`;
 
 /** Admin pages that get a real path; every other admin case rides on ?demo=. */
 export const ADMIN_PAGES = ["dashboard", "rundown", "pengumuman", "pengisi", "undangan", "tamu", "galeri", "hadiah", "feedback", "pengaturan"] as const;

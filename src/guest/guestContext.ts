@@ -1,11 +1,17 @@
 import { createContext, useContext } from "react";
+import type { IconName } from "../components/iconPaths";
 import type { GuestState } from "./state";
 
-export type PageToast = { icon: "Lock" | "Share" | "Check" | "Megaphone"; title: string; sub: string };
+export type PageToast = { icon: IconName; title: string; sub: string };
 
 export type GuestContextValue = {
   state: GuestState;
   set: (patch: Partial<GuestState>) => void;
+  /**
+   * A patch worked out from the latest state, for writers that race each
+   * other (the polls logging notices). Return null to leave the state as is.
+   */
+  update: (fn: (s: GuestState) => Partial<GuestState> | null) => void;
   toast: PageToast | null;
   showToast: (t: PageToast) => void;
   /** A review case (?demo= or an old #token): sample data and a fixed clock. */
