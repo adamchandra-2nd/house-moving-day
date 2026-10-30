@@ -78,8 +78,17 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
           }
         }
 
-        const app = new App(canvas);
+        // The scene is exported "WebGPU only". Left to pick for itself, the
+        // runtime then draws "This scene requires a WebGPU-capable browser"
+        // onto the canvas wherever there is no WebGPU adapter -- iPhones before
+        // iOS 26 -- and still resolves load(), so the guest saw that text
+        // instead of the character. Asked for WebGL outright, it renders the
+        // same scene there.
+        const app = new App(canvas, (await webgpuUsable()) ? {} : { renderer: "webgl" });
+        let refused = false;
+        canvas.addEventListener("splineerror", () => (refused = true), { once: true });
         await app.load(SCENE.url);
+        if (refused) throw new Error("scene needs WebGPU");
         appRef.current = app;
         applySceneFixes(app);
         // Spline leaves hidden objects out of a code export, so the clothes
@@ -412,6 +421,20 @@ function autoLoadAllowed(): boolean {
   if (!conn) return true;
   if (conn.saveData) return false;
   return conn.effectiveType !== "slow-2g" && conn.effectiveType !== "2g";
+}
+
+/**
+ * Whether this browser can actually render WebGPU. `navigator.gpu` alone is
+ * not enough: some browsers expose it and then hand out no adapter.
+ */
+async function webgpuUsable(): Promise<boolean> {
+  const gpu = (navigator as { gpu?: { requestAdapter: () => Promise<unknown> } }).gpu;
+  if (!gpu) return false;
+  try {
+    return !!(await gpu.requestAdapter());
+  } catch {
+    return false;
+  }
 }
 
 /** Waits for the browser to be idle, so the first screen paints first. */

@@ -20,7 +20,6 @@ import "./MainArea.css";
 
 const SWIPE_THRESHOLD = 60;
 const DRAG_START = 8;
-const EDGE_RESISTANCE = 0.3;
 /**
  * How many rooms either side of the current one get their illustration.
  * The track holds all five panels, but painting all five at once meant the
@@ -30,7 +29,12 @@ const EDGE_RESISTANCE = 0.3;
  */
 const ROOM_PRELOAD = 1;
 
-const nearby = (index: number) => ROOMS.map((_, i) => i).filter((i) => Math.abs(i - index) <= ROOM_PRELOAD);
+// Circular: past the last room comes the first again.
+const nearby = (index: number) =>
+  ROOMS.map((_, i) => i).filter((i) => {
+    const d = Math.abs(i - index);
+    return Math.min(d, ROOMS.length - d) <= ROOM_PRELOAD;
+  });
 const TOAST_CLOSE_MS = 200;
 const MOVE_COUNTDOWN_S = 5;
 
@@ -444,7 +448,39 @@ export function MainArea({
   }, [kenalanInvite?.id]);
 
   const room = ROOMS[roomIndex];
-  const atEdge = (dx: number) => (dx > 0 && roomIndex === 0) || (dx < 0 && roomIndex === ROOMS.length - 1);
+  /**
+   * The rooms loop: swiping on from the last one brings the first, and back
+   * from the first the last. The track carries a copy of the last room before
+   * the first and of the first after the last, so that step slides one panel
+   * like any other; once it lands on the copy, the track jumps without
+   * animation to the real panel it shows. `slot` is the track position, the
+   * room index plus one for the leading copy.
+   */
+  const [slot, setSlot] = useState(roomIndex + 1);
+  const [snapping, setSnapping] = useState(false);
+  const wrapping = useRef(false);
+  useEffect(() => {
+    if (wrapping.current) wrapping.current = false;
+    else setSlot(roomIndex + 1);
+  }, [roomIndex]);
+  useEffect(() => {
+    if (!snapping) return;
+    // Two frames: the jump has to be painted before the transition returns.
+    let id = requestAnimationFrame(() => (id = requestAnimationFrame(() => setSnapping(false))));
+    return () => cancelAnimationFrame(id);
+  }, [snapping]);
+  const landed = () => {
+    if (slot !== 0 && slot !== ROOMS.length + 1) return;
+    setSnapping(true);
+    setSlot(roomIndex + 1);
+  };
+  const step = (dir: 1 | -1) => {
+    const next = roomIndex + dir;
+    if (next >= 0 && next < ROOMS.length) return goTo(next);
+    wrapping.current = true;
+    setSlot(next + 1);
+    onRoomChange(next < 0 ? ROOMS.length - 1 : 0);
+  };
 
   // Grows only, so swiping back never re-flashes a bare panel.
   const [painted, setPainted] = useState(() => nearby(roomIndex));
@@ -456,7 +492,7 @@ export function MainArea({
   }, [roomIndex]);
 
   const endDrag = (dx: number) => {
-    if (drag.current?.active && Math.abs(dx) > SWIPE_THRESHOLD && !atEdge(dx)) goTo(roomIndex + (dx < 0 ? 1 : -1));
+    if (drag.current?.active && Math.abs(dx) > SWIPE_THRESHOLD) step(dx < 0 ? 1 : -1);
     drag.current = null;
     setDragX(0);
   };
@@ -516,7 +552,7 @@ export function MainArea({
         const dx = e.clientX - d.x;
         // Only treat it as a room swipe once the gesture is clearly horizontal.
         if (!d.active && Math.abs(dx) > DRAG_START && Math.abs(dx) > Math.abs(e.clientY - d.y)) d.active = true;
-        if (d.active) setDragX(atEdge(dx) ? dx * EDGE_RESISTANCE : dx);
+        if (d.active) setDragX(dx);
       }}
       onPointerUp={(e) => drag.current && endDrag(e.clientX - drag.current.x)}
       onPointerCancel={() => endDrag(0)}
@@ -524,15 +560,16 @@ export function MainArea({
     >
       {/* Layer 1: room illustrations, side by side; follows the finger while dragging */}
       <div
-        className={`room-track${dragX !== 0 ? " is-dragging" : ""}`}
-        style={{ transform: `translateX(calc(-${roomIndex * 100}% + ${dragX}px))` }}
+        className={`room-track${dragX !== 0 || snapping ? " is-dragging" : ""}`}
+        style={{ transform: `translateX(calc(-${slot * 100}% + ${dragX}px))` }}
+        onTransitionEnd={(e) => e.target === e.currentTarget && landed()}
       >
-        {ROOMS.map((r, i) => (
+        {[ROOMS.length - 1, ...ROOMS.keys(), 0].map((i, at) => (
           <section
-            key={r.id}
+            key={at}
             className="room"
-            aria-hidden={r.id !== room.id}
-            style={painted.includes(i) ? { backgroundImage: `url(${r.image})` } : undefined}
+            aria-hidden={at !== slot}
+            style={painted.includes(i) ? { backgroundImage: `url(${ROOMS[i].image})` } : undefined}
           />
         ))}
       </div>
