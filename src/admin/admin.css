@@ -4,6 +4,9 @@
 .admin {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
+  /* One row the height of the window: an auto row grew with a tall page and
+     the overflow below was cut off, unreachable (the end of the rundown). */
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--spacing-medium);
   /* Fixed to the window: sidebar and content share the same top and bottom edge, nothing scrolls the page */
   height: 100vh;
@@ -448,7 +451,9 @@
 .rundown-banner.is-error { background: var(--tag-red-bg); color: var(--tag-red); }
 
 /* Rundown: timeline (fills the panel; minutes are scaled to the measured height) */
-.rundown { --hour-col: 56px; flex: 1; padding: var(--padding-mid-medium) var(--padding-large) var(--padding-large); }
+/* On a short window the day keeps a readable height and the panel scrolls,
+   rather than squeezing 09.00-14.00 until the cards are slivers. */
+.rundown { --hour-col: 56px; flex: 1; overflow-y: auto; padding: var(--padding-mid-medium) var(--padding-large) var(--padding-large); }
 .rundown__head { display: grid; grid-template-columns: var(--hour-col) repeat(5, minmax(0, 1fr)); gap: var(--spacing-extra-small); padding-bottom: var(--padding-medium); flex: none; }
 .rundown__room {
   display: inline-flex;
@@ -464,7 +469,7 @@
   text-overflow: ellipsis;
 }
 .rundown__room svg { flex: none; }
-.rundown__body { position: relative; flex: 1; min-height: 0; margin: var(--spacing-small) 0 var(--spacing-small); }
+.rundown__body { position: relative; flex: 1 0 auto; min-height: 400px; margin: var(--spacing-small) 0 var(--spacing-small); }
 .rundown__hour { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: var(--spacing-extra-small); transform: translateY(-50%); }
 .rundown__label { width: var(--hour-col); color: var(--text-grey-400); }
 .rundown__rule { flex: 1; height: 1px; background: rgba(16, 16, 16, 0.12); }
