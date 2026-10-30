@@ -37,3 +37,7 @@
   padding-top: 64px;
 }
 .kenalan-empty__art .character { height: 100%; width: auto; aspect-ratio: 211 / 340; }
+/* The Spline badge under the feet (WebGL only) is a fixed size: in the small
+   card it ran into the feet and over "Kamu yang pertama hadir!". A taller
+   character leaves it a clear row of its own below them. */
+:root[data-spline-badge] .kenalan-empty__art { height: 300px; margin-bottom: 52px; }

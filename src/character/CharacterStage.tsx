@@ -85,11 +85,16 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
         // iOS 26 -- and still resolves load(), so the guest saw that text
         // instead of the character. Asked for WebGL outright, it renders the
         // same scene there.
-        const app = new App(canvas, (await webgpuUsable()) ? {} : { renderer: "webgl" });
+        const webgpu = await webgpuUsable();
+        const app = new App(canvas, webgpu ? {} : { renderer: "webgl" });
         let refused = false;
         canvas.addEventListener("splineerror", () => (refused = true), { once: true });
         await app.load(SCENE.url);
         if (refused) throw new Error("scene needs WebGPU");
+        // On WebGL the runtime draws its "Built with Spline" badge under the
+        // feet, below the <Character> box. Screens where that would land on
+        // text make room for it (see KenalanScreen.css).
+        document.documentElement.toggleAttribute("data-spline-badge", !webgpu);
         appRef.current = app;
         applySceneFixes(app);
         // Spline leaves hidden objects out of a code export, so the clothes
@@ -330,6 +335,10 @@ function ground(canvas: HTMLCanvasElement, cssHeight: number, lift: number): () 
   // so the character stands on the floor even where the frame cannot be
   // read back at all; the readings below then correct it to the pixel.
   setGaps(canvas, Math.round(FALLBACK_FEET * cssHeight), Math.round(FALLBACK_TOP * cssHeight), lift);
+  // With the WebGL badge drawn right under the feet, a reading takes the two
+  // as one band and stands the character on the badge. The measured
+  // position is all there is to go on then.
+  if (document.documentElement.hasAttribute("data-spline-badge")) return () => {};
   let timer = 0;
   let waiting = 0; // readings before the character first showed up
   let settling = 0; // readings since
