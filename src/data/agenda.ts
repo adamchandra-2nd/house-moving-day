@@ -70,6 +70,31 @@ export function setAgenda(list: AgendaItem[]) {
 
 export const getAgenda = () => current;
 
+/** What the MC has on stage, from GET /api/live. */
+export type StageLive = { phase: "pre" | "live" | "ended"; liveId: string | null };
+let stage: StageLive | null = null;
+
+/**
+ * Follows the stage: while the MC runs a session, that session is the one on
+ * now for guests, whatever the clock says.
+ *
+ * Guests used to go by the clock and the rundown alone, so a session the MC
+ * started early, late, or on a rehearsal day was never "now" on their
+ * phones, and "Tanya pembicara" stayed hidden while the MC and speaker were
+ * already live.
+ */
+export function setStageLive(next: StageLive | null) {
+  if (JSON.stringify(next) === JSON.stringify(stage)) return;
+  stage = next;
+  // A new reference, so everything reading the rundown through useAgenda()
+  // renders again with the new status.
+  current = [...current];
+  listeners.forEach((l) => l());
+}
+
+/** Where the session the MC has on stage sits in the rundown, or -1 when the clock decides. */
+const onStageIndex = () => (stage?.phase === "live" && stage.liveId ? current.findIndex((a) => a.id === stage!.liveId) : -1);
+
 const subscribe = (l: () => void) => {
   listeners.add(l);
   return () => listeners.delete(l);
@@ -83,6 +108,11 @@ export const formatTime = (min: number) => `${String(Math.floor(min / 60)).padSt
 /** Status of each item at `now`; only the first upcoming item is "next". */
 export function statusAt(now: number): Record<string, AgendaStatus> {
   const out: Record<string, AgendaStatus> = {};
+  const live = onStageIndex();
+  if (live >= 0) {
+    current.forEach((a, i) => (out[a.id] = i < live ? "done" : i === live ? "now" : i === live + 1 ? "next" : "later"));
+    return out;
+  }
   let nextGiven = false;
   for (const a of current) {
     if (now >= a.end) out[a.id] = "done";
@@ -95,7 +125,13 @@ export function statusAt(now: number): Record<string, AgendaStatus> {
   return out;
 }
 
-export const currentItem = (now: number) => current.find((a) => now >= a.start && now < a.end);
-export const nextItem = (now: number) => current.find((a) => a.start > now);
+export const currentItem = (now: number) => {
+  const live = onStageIndex();
+  return live >= 0 ? current[live] : current.find((a) => now >= a.start && now < a.end);
+};
+export const nextItem = (now: number) => {
+  const live = onStageIndex();
+  return live >= 0 ? current[live + 1] : current.find((a) => a.start > now);
+};
 /** An empty rundown has not ended: there is nothing yet to have finished. */
-export const eventEndedAt = (now: number) => current.length > 0 && now >= Math.max(...current.map((a) => a.end));
+export const eventEndedAt = (now: number) => onStageIndex() < 0 && current.length > 0 && now >= Math.max(...current.map((a) => a.end));
