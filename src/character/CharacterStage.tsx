@@ -4,6 +4,7 @@ import { ALL_OUTFIT_NODES, READY_OUTFIT_NODES, outfitNodes, type Outfit } from "
 import { CharacterStageContext, type CharacterStageValue, type StageStatus } from "./characterStageContext";
 import { capture as captureCanvas, characterRows } from "./capture";
 import { SCENE } from "./scene";
+import { isStaleChunk, reloadForStaleChunk } from "../swUpdate";
 import "./CharacterStage.css";
 
 /**
@@ -105,6 +106,7 @@ export function CharacterStage({ outfit, children }: { outfit: Outfit; children:
         setStatus("ready");
       } catch (err) {
         console.warn("[CharacterStage] scene failed to load:", err);
+        if (isStaleChunk(err) && reloadForStaleChunk()) return;
         // Kept for /karakter to show: a phone has no console to read, and
         // "it shows 2D" alone does not say whether WebGL, the network or the
         // scene file was the problem.
