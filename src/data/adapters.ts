@@ -1,4 +1,4 @@
-import type { AgendaItem } from "./agenda";
+import type { AgendaItem, StageLive } from "./agenda";
 import type { Guest } from "./guests";
 import type { AskedQuestion } from "./questions";
 import type { Outfit } from "./outfits";
@@ -134,6 +134,8 @@ export const api = {
     const list = await request<AgendaItem[]>("/api/agenda", { token: token() });
     return (list ?? []).map(({ id, start, end, title, roomId, qna }) => ({ id, start, end, title, roomId, qna }));
   },
+  /** Which session the MC has on stage. */
+  live: (): Promise<StageLive> => request("/api/live", { token: token() }),
   questions: (): Promise<AskedQuestion[]> => request("/api/questions", { token: token() }),
   cards: (): Promise<Card[]> => request("/api/cards", { token: token() }),
   announcements: (): Promise<GuestAnnouncement[]> => request("/api/announcements", { token: token() }),
@@ -270,6 +272,7 @@ export const fromWire = (o: Outfit | { baju: string; celana: string; aksesoris: 
 export const queryKeys = {
   guests: ["guests"] as const,
   agenda: ["agenda"] as const,
+  live: ["live"] as const,
   questions: ["questions"] as const,
   invite: ["invite"] as const,
   cards: ["cards"] as const,

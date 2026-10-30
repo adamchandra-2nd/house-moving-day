@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, mutationKeys, queryKeys } from "./adapters";
-import { setAgenda } from "./agenda";
+import { setAgenda, setStageLive } from "./agenda";
 import { queryClient } from "./queryClient";
 
 /**
@@ -55,6 +55,24 @@ export function useAgendaQuery(enabled: boolean) {
   });
   useEffect(() => {
     if (enabled && data) setAgenda(data);
+  }, [enabled, data]);
+}
+
+/**
+ * The session the MC has on stage. Polled like the questions: it is what
+ * opens "Tanya pembicara", so a guest should not wait a minute for it.
+ */
+export function useStageLiveQuery(enabled: boolean) {
+  const { data } = useQuery({
+    queryKey: queryKeys.live,
+    queryFn: api.live,
+    enabled,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+  useEffect(() => {
+    // An API without the endpoint yet errors and leaves data empty: the clock decides, as before.
+    setStageLive(enabled && data ? data : null);
   }, [enabled, data]);
 }
 

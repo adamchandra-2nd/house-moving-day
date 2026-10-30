@@ -31,6 +31,7 @@ import {
   type StageQuestion,
   type StageQuestionState,
 } from "./data";
+import { draftScript } from "./draftScript";
 import { MC_LINKS, type McTab } from "./links";
 import { BigTimer, StageCard, StageShell, TimerStrip } from "./StageShell";
 import { StageLogin } from "./StageLogin";
@@ -51,9 +52,14 @@ const NO_MC: Person = { id: "", name: "MC", role: "mc", title: "MC", phone: "" }
 
 /**
  * The bundled "Claude" scripts are a review fixture keyed by the bundled
- * session ids; a live rundown only has what the committee wrote.
+ * session ids. A live rundown gets a draft from its own sessions instead,
+ * until the committee writes the real one.
  */
-const suggested = (demo: boolean, id: string): ScriptPart[][] => (demo ? (SCRIPTS[id] ?? []) : []);
+const suggested = (demo: boolean, id: string): ScriptPart[][] => {
+  if (demo) return SCRIPTS[id] ?? [];
+  const s = sessionById(id);
+  return s ? [draftScript(s, allSessions(), personById(s.speakerId))] : [];
+};
 const roomName = (id: string) => ROOMS[roomIndexById(id)].name;
 const firstName = (n: string) => n.split(" ")[0];
 
@@ -574,7 +580,7 @@ function Panggung({
             ) : (
               <span className="claude-tag clay clay-light t-p-h5-bold">
                 <Icon name="Sparkle" size={16} />
-                Claude
+                {demo ? "Claude" : "Draf"}
               </span>
             )
           }
@@ -602,7 +608,7 @@ function Panggung({
               </Button>
             </div>
           )}
-          <span className="t-p-h5 stage-muted">{edited ? "Diperbarui panitia dari dashboard." : "Disusun Claude dari rundown. Panitia bisa mengubahnya di dashboard."}</span>
+          <span className="t-p-h5 stage-muted">{edited ? "Diperbarui panitia dari dashboard." : demo ? "Disusun Claude dari rundown. Panitia bisa mengubahnya di dashboard." : "Draf otomatis dari rundown. Panitia bisa mengubahnya di dashboard."}</span>
         </StageCard>
       )}
 

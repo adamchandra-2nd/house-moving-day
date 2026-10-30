@@ -4,7 +4,7 @@ import { api, fromWire } from "../data/adapters";
 import { AGENDA, setAgenda } from "../data/agenda";
 import { eventDay, useRundownMinute } from "../data/clock";
 import { EventContext, type EventInfo } from "../data/eventContext";
-import { useAgendaQuery, useQuestionsQuery } from "../data/queries";
+import { useAgendaQuery, useQuestionsQuery, useStageLiveQuery } from "../data/queries";
 import { queryClient } from "../data/queryClient";
 import type { AskedQuestion } from "../data/questions";
 import { EVENT } from "../config";
@@ -102,6 +102,7 @@ export function GuestProvider({ children }: { children: React.ReactNode }) {
 
   const live = !demo && Boolean(session);
   useAgendaQuery(live);
+  useStageLiveQuery(live);
 
   /**
    * The real clock, outside review cases (which pin their own `now`), on
