@@ -18,15 +18,24 @@ const VIDEO_CUES: { at: number; step: Step }[] = [
   { at: 3.6, step: "unlock" },
   { at: 5.4, step: "open" },
 ];
-/** A video that has not started by then is not coming soon enough: the drawn door plays instead. */
+/**
+ * A video that has not started by then, and is not even downloading, is not
+ * coming: the drawn door plays instead.
+ */
 const VIDEO_START_LIMIT_MS = 4000;
 /**
- * However the video fares, the guest is through the door by then: the 7.5 s
- * clip plus the start limit, with room to spare. A browser pauses video in a
- * background tab, and a guest who switched apps mid-clip must not come back
- * to a door that never finishes opening.
+ * One still downloading gets this long in all to start, with its poster (the
+ * smart lock) on screen meanwhile. 4 s alone was too tight for 3.3 MB on a
+ * phone, and the iPhone ended up on the drawn door every time.
  */
-const VIDEO_MAX_MS = 12_000;
+const VIDEO_LOADING_LIMIT_MS = 10_000;
+/**
+ * However the video fares, the guest is through the door by then: the 7.5 s
+ * clip after the longest wait to start, with room to spare. A browser pauses
+ * video in a background tab, and a guest who switched apps mid-clip must not
+ * come back to a door that never finishes opening.
+ */
+const VIDEO_MAX_MS = 20_000;
 
 const caption = (step: Step) => (step === "open" ? "Selamat datang di rumah baru!" : step === "unlock" ? "Akses diterima" : "Membuka pintu…");
 
@@ -53,14 +62,25 @@ function DoorVideo({ onDone, onFail }: { onDone: () => void; onFail: () => void 
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    // Muted and inline, so phones allow it to start on its own. An abort is
-    // the browser pausing it in a background tab, not a broken video: the
-    // start limit below still falls back if it never gets going.
+    // Muted and inline, so phones allow it to start on its own. React sets
+    // `muted` only as a property, and iOS Safari decides on autoplay from the
+    // attribute: without it play() is refused and the drawn door took over.
+    v.muted = true;
+    v.defaultMuted = true;
+    v.setAttribute("muted", "");
+    v.setAttribute("playsinline", "");
+    // An abort is the browser pausing it in a background tab, not a broken
+    // video: the start limits below still fall back if it never gets going.
     v.play().catch((e: unknown) => {
       if (!(e instanceof DOMException && e.name === "AbortError")) onFail();
     });
-    const slow = window.setTimeout(() => {
-      if (!started.current) onFail();
+    let slow = window.setTimeout(() => {
+      if (started.current) return;
+      const loading = v.networkState === v.NETWORK_LOADING || v.readyState > v.HAVE_NOTHING;
+      if (!loading) return onFail();
+      slow = window.setTimeout(() => {
+        if (!started.current) onFail();
+      }, VIDEO_LOADING_LIMIT_MS - VIDEO_START_LIMIT_MS);
     }, VIDEO_START_LIMIT_MS);
     const cap = window.setTimeout(onDone, VIDEO_MAX_MS);
     // Back from another app: carry on where the clip was paused.

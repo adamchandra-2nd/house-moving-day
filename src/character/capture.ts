@@ -12,8 +12,14 @@ async function readFrame(canvas: HTMLCanvasElement): Promise<{ data: Uint8Clampe
   const { width: w, height: h } = canvas;
   if (!w || !h) return null;
   const image = new Image();
-  image.src = canvas.toDataURL();
-  await image.decode();
+  // onload rather than image.decode(): Safari rejects decode() on large data
+  // URLs, which on iPhone left every reading empty and the character
+  // floating above the floor.
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("frame unreadable"));
+    image.src = canvas.toDataURL();
+  });
   const scratch = document.createElement("canvas");
   scratch.width = w;
   scratch.height = h;
