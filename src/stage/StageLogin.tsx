@@ -10,7 +10,7 @@ import { setStageToken, stageLogin } from "./remote";
 import { ContactButton } from "./ui";
 import "./stage.css";
 
-/** The server's default STAGE_CODE, shown only on the review cases. */
+/** The code the review cases accept. Real MC and speakers each have their own, from the server. */
 export const STAGE_CODE = "246810";
 const LEN = 6;
 const MAX_TRIES = 3;
@@ -22,9 +22,9 @@ const maskPhone = (p: string) => (!p ? "yang didaftarkan panitia" : p.includes("
 
 /**
  * MC and speakers may come from outside Potara, so there is no account: the admin sends a personal link on
- * WhatsApp, and the first open is confirmed with the 6-digit stage code. Nothing sends that code by itself:
- * the committee passes it on in a WhatsApp message of its own (Pengisi → Kirim kode). This screen used to
- * say "kami kirim kode" behind a button that sent nothing, so speakers waited for a code that never came.
+ * WhatsApp, and the first open is confirmed with their own 6-digit code, sent in the same message as the
+ * link. This screen used to say "kami kirim kode" behind a button that sent nothing, so speakers waited for
+ * a code that never came.
  */
 export function StageLogin({
   person,
@@ -119,7 +119,7 @@ export function StageLogin({
             <div className="stage-login__head">
               <h1 className="stage-login__title">Halo, {person.name.split(" ")[0] || "Pengisi acara"}!</h1>
               <p className="t-p-h4 stage-login__body">
-                Kamu {isMc ? "jadi MC" : person.title ? `jadi performance (${person.title.toLowerCase()})` : "jadi performance"} di {eventLabel}. Untuk keamanan, masuk dengan kode 6 angka yang dikirim panitia lewat WhatsApp ke {maskPhone(person.phone)}.
+                Kamu {isMc ? "jadi MC" : person.title ? `jadi performance (${person.title.toLowerCase()})` : "jadi performance"} di {eventLabel}. Untuk keamanan, masuk dengan kode 6 angka yang ada di pesan WhatsApp berisi link ini ({maskPhone(person.phone)}).
               </p>
             </div>
             <Button
@@ -143,7 +143,7 @@ export function StageLogin({
           <>
             <div className="stage-login__head">
               <h1 className="stage-login__title">Masukkan kode</h1>
-              <p className="t-p-h4 stage-login__body">Kode 6 angka dari panitia, ada di chat WhatsApp {maskPhone(person.phone)}.</p>
+              <p className="t-p-h4 stage-login__body">Kode 6 angka ada di pesan WhatsApp yang sama dengan link ini.</p>
             </div>
             {step === "terkunci" ? (
               <div className="stage-login__note">

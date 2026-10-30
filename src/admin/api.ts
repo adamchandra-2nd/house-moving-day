@@ -162,8 +162,6 @@ export const adminApi = {
     request<void>(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "DELETE", token: loadSession() }),
 
   people: () => request<AdminPerson[]>("/api/admin/people", { token: loadSession() }),
-  /** The code MC and speakers sign in with (STAGE_CODE), for the committee to send them. */
-  stageCode: () => request<{ code: string }>("/api/admin/stage-code", { token: loadSession() }),
 
   /** The server mints the id; it is what the personal stage link carries. */
   addPerson: (p: Omit<Person, "id">) =>
@@ -258,7 +256,8 @@ export type WireSettings = {
 export type PersonAccess = "belum" | "terkirim" | "masuk" | "dicabut";
 
 /** An MC or speaker as the committee sees them: plus whether their link is out. */
-export type AdminPerson = Person & { access?: PersonAccess };
+/** `stageCode`: the code they sign in with, sent along with their link. Only the committee's endpoints carry it. */
+export type AdminPerson = Person & { access?: PersonAccess; stageCode?: string };
 
 /**
  * A photo as the committee sees it: the guest's view plus their own notes.

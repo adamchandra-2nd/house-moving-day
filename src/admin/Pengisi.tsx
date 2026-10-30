@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -8,7 +8,7 @@ import { TextField } from "../components/TextField";
 import { formatTime } from "../data/agenda";
 import { SCRIPTS, type Person, type ScriptPart } from "../stage/data";
 import { draftScript } from "../stage/draftScript";
-import { adminApi, stageLink, waLink, type PersonAccess } from "./api";
+import { stageLink, waLink, type PersonAccess } from "./api";
 import type { AdminEvent } from "./data";
 import { normalizePhone } from "./invite";
 import { DataTable, Empty, Panel, RowMenu } from "./ui";
@@ -23,7 +23,8 @@ const ACCESS: Record<Access, { label: string; type: "done" | "neutral" | "claime
 
 type Props = {
   /** Live: from GET /api/admin/people. Review cases: the bundled sample. */
-  people: Person[];
+  /** Live: with each person's own sign-in code, which only the committee sees. */
+  people: StagePerson[];
   /** The rundown: the sessions a speaker is on, and the ones the MC scripts. */
   events: AdminEvent[];
   /** Live: each person's `access` from the server. Review cases: the sample map. */
@@ -54,23 +55,20 @@ const sample = (id: string): ScriptPart[] => SCRIPTS[id]?.[0] ?? [];
 
 const firstOf = (name: string) => name.split(" ")[0];
 
-/** The WhatsApp message: who they are on the day, and the link to their screen. */
-const inviteText = (p: Person) =>
-  `Halo ${firstOf(p.name)}! Kamu jadi ${p.role === "mc" ? "MC" : "pembicara"} di House Moving Day.\n\nBuka layarmu di sini:\n${stageLink(p)}\n\nMasukkan kode panggung yang dikirim panitia saat diminta.`;
-
-/** The server's built-in STAGE_CODE: it is in the repo, so it should be changed before the event. */
-const DEFAULT_STAGE_CODE = "246810";
+type StagePerson = Person & { stageCode?: string };
 
 /**
- * The stage code, in a message of its own: a forwarded link alone does not
- * get anyone in. Nothing sends it automatically -- the committee sends this.
+ * The WhatsApp message: who they are on the day, the link to their screen,
+ * and the code that opens it. The code used to be one STAGE_CODE for
+ * everybody, kept in the server's environment and sent in a message of its
+ * own; each person now has their own, stored with them, so one message does.
  */
-const codeText = (p: Person, code: string) =>
-  `Halo ${firstOf(p.name)}! Ini kode panggung untuk masuk ke layar ${p.role === "mc" ? "MC" : "pembicara"} House Moving Day:
-
-${code}
-
-Masukkan kode ini setelah membuka link dari panitia. Jangan dibagikan ke orang lain ya.`;
+const inviteText = (p: StagePerson) => {
+  const code = p.stageCode
+    ? `Kode masuk: ${p.stageCode}\n\nLink dan kode ini khusus untukmu, jangan dibagikan ya.`
+    : "Masukkan kode yang dikirim panitia saat diminta.";
+  return `Halo ${firstOf(p.name)}! Kamu jadi ${p.role === "mc" ? "MC" : "pembicara"} di House Moving Day.\n\nBuka layarmu di sini:\n${stageLink(p)}\n\n${code}`;
+};
 
 /** MC and speakers (may be from outside Potara): personal WhatsApp link + code, no account. */
 export function Pengisi({ people, events, access, scripts, live, initialEdit, onSend, onRevoke, onRestore, onInvited, onSaveScript, onSavePerson, onDeletePerson, onCopied }: Props) {
@@ -82,29 +80,10 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
     return s ? draftScript(s, events, people.find((p) => p.id === s.speakerId)) : [];
   };
   const [editing, setEditing] = useState<AdminEvent | null>(() => events.find((x) => x.id === initialEdit) ?? null);
-  const [sending, setSending] = useState<Person | null>(null);
-  /** Live: the link message is open in WhatsApp; the dialog moves on to the code. */
-  const [linkSent, setLinkSent] = useState(false);
-  const closeSending = () => {
-    setSending(null);
-    setLinkSent(false);
-  };
+  const [sending, setSending] = useState<StagePerson | null>(null);
   const [revoking, setRevoking] = useState<Person | null>(null);
   /** null: closed. `{}`: adding someone new. */
   const [person, setPerson] = useState<Partial<Person> | null>(null);
-  // Fetched up front: wa.me has to open inside the click, or a popup blocker eats it.
-  const [stageCode, setStageCode] = useState<string | null>(null);
-  useEffect(() => {
-    if (!live) return;
-    let on = true;
-    adminApi
-      .stageCode()
-      .then((r) => on && setStageCode(r.code))
-      .catch(() => undefined);
-    return () => {
-      on = false;
-    };
-  }, [live]);
   const sessionsOf = (p: Person) =>
     p.role === "mc"
       ? "Semua sesi"
@@ -113,17 +92,18 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
           .map((s) => `${s.title} · ${formatTime(s.start)}`)
           .join(", ") || "Belum ada sesi";
 
-  const copy = (p: Person) => {
+  /** The whole message, code included: a link alone would not get them in. */
+  const copy = (p: StagePerson) => {
     // Either way the link has left this screen, so the server hears it was sent.
-    const manual = () => window.prompt("Salin link ini:", stageLink(p));
+    const manual = () => window.prompt("Salin pesan ini:", inviteText(p));
     const done = () => onInvited?.(p.id);
     if (!navigator.clipboard) {
       manual();
       return done();
     }
     void navigator.clipboard
-      .writeText(stageLink(p))
-      .then(() => onCopied?.(`Link ${firstOf(p.name)}`))
+      .writeText(inviteText(p))
+      .then(() => onCopied?.(`Link dan kode ${firstOf(p.name)}`))
       .catch(manual)
       .finally(done);
   };
@@ -134,12 +114,6 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
         <div className="admin-head__text">
           <h1 className="admin-title">Pengisi acara</h1>
           <p className="t-p-h4 admin-sub">MC dan pembicara masuk lewat link pribadi di WhatsApp, lalu kode 6 angka. Tidak perlu akun.</p>
-          {stageCode && (
-            <p className="t-p-h5 admin-muted">
-              Kode panggung: <strong>{stageCode}</strong> · kirim ke mereka lewat ⋯ → Kirim kode
-              {stageCode === DEFAULT_STAGE_CODE && " · masih kode bawaan, ganti STAGE_CODE di server sebelum acara"}
-            </p>
-          )}
         </div>
       </div>
 
@@ -202,10 +176,7 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
                       label={`Aksi lain untuk ${p.name}`}
                       items={[
                         ...(live ? [{ label: "Ubah", icon: "Pencil" as const, onSelect: () => setPerson(p) }] : []),
-                        ...(live && a !== "dicabut" && stageCode && normalizePhone(p.phone)
-                          ? [{ label: "Kirim kode", icon: "Lock" as const, onSelect: () => window.open(waLink(p.phone, codeText(p, stageCode)), "_blank", "noopener") }]
-                          : []),
-                        ...(live && a !== "dicabut" ? [{ label: "Salin link", icon: "Copy" as const, onSelect: () => copy(p) }] : []),
+                        ...(live && a !== "dicabut" ? [{ label: "Salin link + kode", icon: "Copy" as const, onSelect: () => copy(p) }] : []),
                         ...(a !== "dicabut" && a !== "belum" ? [{ label: "Cabut akses", icon: "Close" as const, danger: true, onSelect: () => setRevoking(p) }] : []),
                       ]}
                     />
@@ -287,54 +258,32 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
         <Dialog
           icon="Send"
           iconTone="green"
-          title={live && linkSent ? `Kirim kode ke ${firstOf(sending.name)}` : `Kirim link ke ${firstOf(sending.name)}?`}
+          title={`Kirim link ke ${firstOf(sending.name)}?`}
           description={
             !live
               ? `Link pribadi dikirim ke WhatsApp ${sending.phone}. Saat dibuka, ${firstOf(sending.name)} memasukkan kode 6 angka yang kami kirim ke nomor yang sama.`
-              : linkSent
-                ? stageCode
-                  ? `Langkah 2 dari 2: kirim kode panggung ${stageCode} dalam pesan terpisah. Tanpa kode ini, ${firstOf(sending.name)} tidak bisa masuk.`
-                  : `Kode panggung belum terbaca dari server. Muat ulang halaman ini, lalu kirim lewat ⋯ → Kirim kode.`
-                : `Langkah 1 dari 2: WhatsApp terbuka dengan pesan berisi link pribadi ${firstOf(sending.name)}, siap dikirim ke ${sending.phone}. Setelah itu kirim kode panggungnya.`
+              : sending.stageCode
+                ? `WhatsApp terbuka dengan satu pesan berisi link pribadi ${firstOf(sending.name)} dan kode masuknya (${sending.stageCode}), siap dikirim ke ${sending.phone}.`
+                : `WhatsApp terbuka dengan pesan berisi link pribadi ${firstOf(sending.name)}. Kodenya belum ada di server: jalankan migrasi 010 dulu, lalu muat ulang halaman ini.`
           }
-          onClose={closeSending}
+          onClose={() => setSending(null)}
           actions={
-            live && linkSent ? (
-              <>
-                {stageCode && (
-                  <Button
-                    icon="Lock"
-                    onClick={() => {
-                      window.open(waLink(sending.phone, codeText(sending, stageCode)), "_blank", "noopener");
-                      closeSending();
-                    }}
-                  >
-                    Kirim kode
-                  </Button>
-                )}
-                <Button style="tertiary" onClick={closeSending}>
-                  Nanti saja
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  icon="Send"
-                  onClick={() => {
-                    // Opened inside the click, or a popup blocker eats it.
-                    if (live) window.open(waLink(sending.phone, inviteText(sending)), "_blank", "noopener");
-                    onSend(sending.id);
-                    if (live) setLinkSent(true);
-                    else closeSending();
-                  }}
-                >
-                  {live ? "Buka WhatsApp" : "Kirim link"}
-                </Button>
-                <Button style="tertiary" onClick={closeSending}>
-                  Kembali
-                </Button>
-              </>
-            )
+            <>
+              <Button
+                icon="Send"
+                onClick={() => {
+                  // Opened inside the click, or a popup blocker eats it.
+                  if (live) window.open(waLink(sending.phone, inviteText(sending)), "_blank", "noopener");
+                  onSend(sending.id);
+                  setSending(null);
+                }}
+              >
+                {live ? "Buka WhatsApp" : "Kirim link"}
+              </Button>
+              <Button style="tertiary" onClick={() => setSending(null)}>
+                Kembali
+              </Button>
+            </>
           }
         />
       )}
