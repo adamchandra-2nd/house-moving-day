@@ -37,7 +37,7 @@ import { BigTimer, StageCard, StageShell, TimerStrip } from "./StageShell";
 import { StageLogin } from "./StageLogin";
 import { StageNotice, useStageGate } from "./gate";
 import { sendAnnouncement } from "./remote";
-import { clockMinute, nextSession, remainingS, sortedSessions, useNow, useStage, useWakeLock, type StageState } from "./store";
+import { clockMinute, EMPTY_STAGE, nextSession, remainingS, sortedSessions, useNow, useStage, useWakeLock, type StageState } from "./store";
 import { InkOption, MetaTags, QCard, ReadMode, Sheet, SpeakerRow, StageSystem } from "./ui";
 import { Welcome } from "./Welcome";
 
@@ -193,6 +193,16 @@ function McMain({ token, demo, mc, event, initialTab }: { token: string; demo: b
     }));
     notify({ icon: "Check", title: `${live.title} selesai`, sub: "Form feedback sesi ini sudah muncul di HP tamu." });
   };
+  /**
+   * Back to before the first session, for a rehearsal or an event ended by
+   * mistake. Once the last session ended, the stage stayed "Acara selesai"
+   * for good: nothing was left to start, so the MC could not run it again.
+   * The committee's scripts are kept; ticks, signals and progress are not.
+   */
+  const restartEvent = () => {
+    update((s) => ({ ...EMPTY_STAGE(), scripts: s.scripts }));
+    notify({ icon: "ArrowRight", title: "Acara dimulai ulang", sub: "Semua sesi kembali belum mulai." });
+  };
   const signal = (kind: McSignal) => {
     update((s) => ({ ...s, mcSignal: { kind, at: Date.now() } }));
     notify({ icon: "Send", title: `Terkirim ke ${firstName(personById(live?.speakerId)?.name ?? "performance")}`, sub: `“${MC_SIGNALS[kind].title}” muncul besar di layarnya.` });
@@ -249,6 +259,7 @@ function McMain({ token, demo, mc, event, initialTab }: { token: string; demo: b
       daysLeft={sc.daysLeft}
       onStart={startSession}
       onEnd={endSession}
+      onRestart={restartEvent}
       onSignal={signal}
       onToggleLine={(sid, i) =>
         update((s) => {
@@ -389,6 +400,7 @@ function Panggung({
   daysLeft,
   onStart,
   onEnd,
+  onRestart,
   onSignal,
   onToggleLine,
   onVariant,
@@ -403,6 +415,7 @@ function Panggung({
   daysLeft?: number;
   onStart: (id: string) => void;
   onEnd: () => void;
+  onRestart: () => void;
   onSignal: (k: McSignal) => void;
   onToggleLine: (sessionId: string, i: number) => void;
   onVariant: (sessionId: string) => void;
@@ -410,6 +423,7 @@ function Panggung({
   onResolveHelp: () => void;
 }) {
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
   const live = state.liveId ? sessionById(state.liveId) : undefined;
   const next = nextSession(state);
   const focus = live ?? next;
@@ -475,6 +489,9 @@ function Panggung({
               {/* The MC reading this, and the rundown they actually ran. */}
               <h2 className="now-card__title">Acara selesai. Terima kasih, {firstName(MC.name)}!</h2>
               <span className="t-p-h4">Semua {allSessions().length} sesi sudah berjalan. Tamu sedang mengisi feedback akhir.</span>
+              <Button block style="tertiary" icon="ArrowLeft" onClick={() => setConfirmRestart(true)}>
+                Mulai ulang acara
+              </Button>
             </>
           ) : daysLeft ? (
             <>
@@ -631,6 +648,31 @@ function Panggung({
                 Selesaikan
               </Button>
               <Button style="tertiary" onClick={() => setConfirmEnd(false)}>
+                Kembali
+              </Button>
+            </>
+          }
+        />
+      )}
+      {confirmRestart && (
+        <Dialog
+          icon="ArrowLeft"
+          iconTone="red"
+          title="Mulai ulang acara?"
+          description="Semua sesi kembali belum mulai, dan centang naskah serta kode ke performance direset. Naskah dari panitia tetap ada. Pakai untuk gladi, bukan saat acara berjalan."
+          onClose={() => setConfirmRestart(false)}
+          actions={
+            <>
+              <Button
+                icon="ArrowLeft"
+                onClick={() => {
+                  setConfirmRestart(false);
+                  onRestart();
+                }}
+              >
+                Mulai ulang
+              </Button>
+              <Button style="tertiary" onClick={() => setConfirmRestart(false)}>
                 Kembali
               </Button>
             </>
