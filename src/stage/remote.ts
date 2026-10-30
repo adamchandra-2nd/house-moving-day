@@ -321,10 +321,18 @@ export type SentAnnouncement = { id: string; title: string; body: string; roomId
  * It used to live only in the stage document, which no guest's phone reads:
  * the MC saw "terkirim" and the room saw nothing. MC only; the server checks
  * the role.
+ *
+ * The body is built field by field: the server refuses unknown fields, and
+ * the one-tap templates carry their icon, so sending a template as it was
+ * failed with "unknown field \"icon\"".
  */
 export async function sendAnnouncement(a: { title: string; body: string; roomId: string | null }) {
   try {
-    return await request<SentAnnouncement>("/api/stage/announcements", { method: "POST", token: loadStageToken(), body: a });
+    return await request<SentAnnouncement>("/api/stage/announcements", {
+      method: "POST",
+      token: loadStageToken(),
+      body: { title: a.title, body: a.body, roomId: a.roomId },
+    });
   } catch (e) {
     handleStageRefusal(e);
     throw e;

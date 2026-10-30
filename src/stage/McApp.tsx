@@ -969,7 +969,7 @@ function Umumkan({ state, compose: startCompose, onSend }: { state: StageState; 
       <StageCard icon="Megaphone" tone="coral" title="Sekali ketuk">
         <div className="tpl-list">
           {ANNOUNCE_TEMPLATES.map((t) => (
-            <button key={t.title} type="button" className="tpl clay clay-light" onClick={() => setConfirm(t)}>
+            <button key={t.title} type="button" className="tpl clay clay-light" onClick={() => setConfirm({ title: t.title, body: t.body, roomId: t.roomId })}>
               <span className="icon-badge icon-badge--coral icon-badge--S clay clay-accent">
                 <Icon name={t.icon} size={16} />
               </span>

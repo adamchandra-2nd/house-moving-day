@@ -155,7 +155,8 @@ export const adminApi = {
     request<Announcement>(`/api/admin/announcements/${encodeURIComponent(id)}/resend`, { method: "POST", token: loadSession() }),
 
   sendAnnouncement: (a: { title: string; body: string; roomId: string | null }) =>
-    request<Announcement>("/api/admin/announcements", { method: "POST", token: loadSession(), body: a }),
+    // Field by field: the server refuses unknown fields (see stage/remote.ts sendAnnouncement).
+    request<Announcement>("/api/admin/announcements", { method: "POST", token: loadSession(), body: { title: a.title, body: a.body, roomId: a.roomId } }),
 
   /** Guests stop seeing it too: the server no longer returns it to them. 404 if it is already gone. */
   deleteAnnouncement: (id: string) =>
