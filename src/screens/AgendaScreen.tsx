@@ -34,6 +34,40 @@ type Props = {
   finalFeedbackSent: boolean;
 };
 
+/**
+ * Side-by-side columns for sessions that overlap in time, like Google
+ * Calendar's day view. Without this, a 09.00–10.00 and a 09.30–10.35 session
+ * were drawn at the same x and the later card covered the earlier one.
+ *
+ * Sessions are swept in start order into clusters of mutually overlapping
+ * ones; each takes the first column free at its start, and every session in a
+ * cluster shares that cluster's column count so the widths line up.
+ */
+function columnsOf(items: { id: string; start: number; end: number }[]) {
+  const out: Record<string, { col: number; cols: number }> = {};
+  const sorted = [...items].sort((a, b) => a.start - b.start || b.end - a.end);
+  let cluster: string[] = [];
+  let colEnds: number[] = [];
+  let clusterEnd = -Infinity;
+  const close = () => cluster.forEach((id) => (out[id].cols = colEnds.length));
+  for (const it of sorted) {
+    if (it.start >= clusterEnd) {
+      close();
+      cluster = [];
+      colEnds = [];
+      clusterEnd = it.end;
+    }
+    let col = colEnds.findIndex((end) => end <= it.start);
+    if (col === -1) col = colEnds.push(it.end) - 1;
+    else colEnds[col] = it.end;
+    out[it.id] = { col, cols: 1 };
+    cluster.push(it.id);
+    clusterEnd = Math.max(clusterEnd, it.end);
+  }
+  close();
+  return out;
+}
+
 /** Agenda as a day timeline: hour column on the left, cards sized by duration, and a live "now" line. */
 export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRoom, onFeedback, onAsk, feedbackSent, finalFeedbackSent }: Props) {
   const EVENT = useEvent();
@@ -41,6 +75,7 @@ export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRo
   const status = statusAt(now);
   const y = (min: number) => (min - DAY_START) * PX;
   const showNow = now >= DAY_START && now <= DAY_END;
+  const columns = columnsOf(agenda);
 
   return (
     <div className="page__scroll screen-enter">
@@ -85,11 +120,12 @@ export function AgendaScreen({ now, currentRoomIndex, changedId, ended, onGoToRo
           const here = roomIndex === currentRoomIndex;
           const height = (item.end - item.start) * PX - 4;
           const compact = item.end - item.start <= 45;
+          const { col, cols } = columns[item.id];
           return (
             <article
               key={item.id}
-              className={`timeline__event card agenda-card--${s}${compact ? " is-compact" : ""}`}
-              style={{ top: y(item.start) + 2, height }}
+              className={`timeline__event card agenda-card--${s}${compact ? " is-compact" : ""}${cols > 1 ? " is-split" : ""}`}
+              style={{ top: y(item.start) + 2, height, "--col": col, "--cols": cols } as React.CSSProperties}
             >
               {(tag || item.id === changedId) && (
                 <span className="agenda-card__tags">

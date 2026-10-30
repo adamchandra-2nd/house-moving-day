@@ -94,3 +94,26 @@
 
 .agenda-ended { align-items: flex-start; }
 .agenda-ended__link { color: var(--orange-splash); text-align: left; }
+
+/* Overlapping sessions share the row in columns (see columnsOf). The track
+   between the hour column and the right-hand strip is split evenly, with a
+   small gutter between cards. */
+.timeline__event.is-split {
+  --track: calc(100% - var(--hour-col) - var(--spacing-small) - var(--spacing-medium));
+  left: calc(var(--hour-col) + var(--spacing-small) + var(--track) * var(--col) / var(--cols));
+  right: auto;
+  width: calc(var(--track) / var(--cols) - var(--spacing-extra-small));
+  padding: var(--padding-mid-medium) var(--padding-small);
+}
+.timeline__event.is-split .agenda-card__title { font-size: 14px; overflow-wrap: anywhere; }
+.timeline__event.is-split .agenda-card__meta { flex-direction: column; align-items: flex-start; }
+/* A column is ~90px inside: the button wraps its label instead of running off the card. */
+.timeline__event.is-split .btn {
+  align-self: stretch;
+  height: auto;
+  min-height: 36px;
+  padding: 6px var(--padding-small);
+  white-space: normal;
+  text-align: center;
+  justify-content: center;
+}
