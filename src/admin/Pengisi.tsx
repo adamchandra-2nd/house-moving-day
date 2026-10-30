@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -7,7 +7,7 @@ import { Icon } from "../components/Icon";
 import { TextField } from "../components/TextField";
 import { formatTime } from "../data/agenda";
 import { SCRIPTS, type Person, type ScriptPart } from "../stage/data";
-import { stageLink, waLink, type PersonAccess } from "./api";
+import { adminApi, stageLink, waLink, type PersonAccess } from "./api";
 import type { AdminEvent } from "./data";
 import { normalizePhone } from "./invite";
 import { DataTable, Empty, Panel, RowMenu } from "./ui";
@@ -57,6 +57,20 @@ const firstOf = (name: string) => name.split(" ")[0];
 const inviteText = (p: Person) =>
   `Halo ${firstOf(p.name)}! Kamu jadi ${p.role === "mc" ? "MC" : "pembicara"} di House Moving Day.\n\nBuka layarmu di sini:\n${stageLink(p)}\n\nMasukkan kode panggung yang dikirim panitia saat diminta.`;
 
+/** The server's built-in STAGE_CODE: it is in the repo, so it should be changed before the event. */
+const DEFAULT_STAGE_CODE = "246810";
+
+/**
+ * The stage code, in a message of its own: a forwarded link alone does not
+ * get anyone in. Nothing sends it automatically -- the committee sends this.
+ */
+const codeText = (p: Person, code: string) =>
+  `Halo ${firstOf(p.name)}! Ini kode panggung untuk masuk ke layar ${p.role === "mc" ? "MC" : "pembicara"} House Moving Day:
+
+${code}
+
+Masukkan kode ini setelah membuka link dari panitia. Jangan dibagikan ke orang lain ya.`;
+
 /** MC and speakers (may be from outside Potara): personal WhatsApp link + code, no account. */
 export function Pengisi({ people, events, access, scripts, live, initialEdit, onSend, onRevoke, onRestore, onInvited, onSaveScript, onSavePerson, onDeletePerson, onCopied }: Props) {
   const sessions = [...events].sort((a, b) => a.start - b.start);
@@ -65,6 +79,19 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
   const [revoking, setRevoking] = useState<Person | null>(null);
   /** null: closed. `{}`: adding someone new. */
   const [person, setPerson] = useState<Partial<Person> | null>(null);
+  // Fetched up front: wa.me has to open inside the click, or a popup blocker eats it.
+  const [stageCode, setStageCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (!live) return;
+    let on = true;
+    adminApi
+      .stageCode()
+      .then((r) => on && setStageCode(r.code))
+      .catch(() => undefined);
+    return () => {
+      on = false;
+    };
+  }, [live]);
   const sessionsOf = (p: Person) =>
     p.role === "mc"
       ? "Semua sesi"
@@ -94,6 +121,12 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
         <div className="admin-head__text">
           <h1 className="admin-title">Pengisi acara</h1>
           <p className="t-p-h4 admin-sub">MC dan pembicara masuk lewat link pribadi di WhatsApp, lalu kode 6 angka. Tidak perlu akun.</p>
+          {stageCode && (
+            <p className="t-p-h5 admin-muted">
+              Kode panggung: <strong>{stageCode}</strong> · kirim ke mereka lewat ⋯ → Kirim kode
+              {stageCode === DEFAULT_STAGE_CODE && " · masih kode bawaan, ganti STAGE_CODE di server sebelum acara"}
+            </p>
+          )}
         </div>
       </div>
 
@@ -156,6 +189,9 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
                       label={`Aksi lain untuk ${p.name}`}
                       items={[
                         ...(live ? [{ label: "Ubah", icon: "Pencil" as const, onSelect: () => setPerson(p) }] : []),
+                        ...(live && a !== "dicabut" && stageCode && normalizePhone(p.phone)
+                          ? [{ label: "Kirim kode", icon: "Lock" as const, onSelect: () => window.open(waLink(p.phone, codeText(p, stageCode)), "_blank", "noopener") }]
+                          : []),
                         ...(live && a !== "dicabut" ? [{ label: "Salin link", icon: "Copy" as const, onSelect: () => copy(p) }] : []),
                         ...(a !== "dicabut" && a !== "belum" ? [{ label: "Cabut akses", icon: "Close" as const, danger: true, onSelect: () => setRevoking(p) }] : []),
                       ]}
@@ -233,7 +269,7 @@ export function Pengisi({ people, events, access, scripts, live, initialEdit, on
           title={`Kirim link ke ${firstOf(sending.name)}?`}
           description={
             live
-              ? `WhatsApp terbuka dengan pesan berisi link pribadi ${firstOf(sending.name)}, siap dikirim ke ${sending.phone}. Kode panggung dikirim terpisah.`
+              ? `WhatsApp terbuka dengan pesan berisi link pribadi ${firstOf(sending.name)}, siap dikirim ke ${sending.phone}. Setelah itu kirim kodenya lewat ⋯ → Kirim kode.`
               : `Link pribadi dikirim ke WhatsApp ${sending.phone}. Saat dibuka, ${firstOf(sending.name)} memasukkan kode 6 angka yang kami kirim ke nomor yang sama.`
           }
           onClose={() => setSending(null)}

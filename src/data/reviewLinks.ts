@@ -164,7 +164,7 @@ export const REVIEW_GROUPS: { title: string; links: { token: string; label: stri
   {
     title: "MC (HP + tablet)",
     links: [
-      { token: "mc-masuk", label: "Masuk: link WA", note: "Halo + kirim kode ke WhatsApp" },
+      { token: "mc-masuk", label: "Masuk: link WA", note: "Halo + masukkan kode dari panitia" },
       { token: "mc-kode", label: "Masukkan kode", note: "Kode demo 246810" },
       { token: "mc-kode-salah", label: "Kode salah", note: "Sisa percobaan" },
       { token: "mc-terkunci", label: "Terkunci", note: "3x salah" },
